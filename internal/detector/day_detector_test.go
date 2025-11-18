@@ -18,8 +18,8 @@ import (
 
 // TestMain sets up the test environment
 func TestMain(m *testing.M) {
-	// Initialize logger with DEBUG level for detailed output
-	logger.Setup(logger.DEBUG)
+	// Initialize logger with INFO level to avoid blocking
+	logger.Setup(logger.INFO)
 
 	// Run tests
 	code := m.Run()
@@ -481,16 +481,10 @@ func TestRealGameScreenshots(t *testing.T) {
 		t.Skip("No templates loaded, skipping real screenshot test")
 	}
 
-	// Enable OCR if available, otherwise use template matching
-	if OCRAvailable {
-		t.Logf("📝 OCR support detected - enabling OCR detection")
-		detector.EnableOCR(true)
-		detector.SetDetectionStrategy(StrategyOCR)
-	} else {
-		t.Logf("⚠️  OCR not available - using template matching only")
-		detector.EnableTemplateMatching(true)
-		detector.SetDetectionStrategy(StrategyAuto)
-	}
+	// Enable template matching with auto strategy
+	detector.EnableTemplateMatching(true)
+	detector.SetDetectionStrategy(StrategyAuto)
+	detector.SetLanguage("eng") // Set to English for test screenshots
 
 	// Expected test cases
 	testCases := []struct {

@@ -46,8 +46,6 @@ type DetectionStrategy int
 const (
 	// StrategyAuto automatically selects the best strategy
 	StrategyAuto DetectionStrategy = iota
-	// StrategyOCR uses OCR to extract day number from text
-	StrategyOCR
 	// StrategyHotspotCache uses cached hotspot from previous detection
 	StrategyHotspotCache
 	// StrategyColorFilter uses color-based filtering to find candidates
@@ -102,8 +100,7 @@ type DayDetector struct {
 	// Performance tuning
 	colorFilterThreshold float64 // Threshold for bright pixel ratio (0.0-1.0)
 	pyramidScales        []float64
-	candidateStepSize    int  // Step size for candidate region scanning
-	enableOCR            bool // Enable OCR-based detection (more reliable than template matching)
+	candidateStepSize    int // Step size for candidate region scanning
 }
 
 // NewDayDetector creates a new day detector
@@ -114,7 +111,7 @@ func NewDayDetector(cfg *config.Config) *DayDetector {
 		updateInterval:      time.Duration(cfg.UpdateInterval * float64(time.Second)),
 		templates:           make(map[string]*DayTemplate),
 		currentLang:         "chs", // Default to simplified Chinese
-		matchThreshold:      0.75,  // OPTIMIZED: Lower threshold but we select best match across all templates
+		matchThreshold:      0.8,   // Default threshold
 		enableTemplateMatch: false, // Disable by default (use mock mode)
 		lastResult: &DayResult{
 			IsDetected: false,
@@ -126,13 +123,7 @@ func NewDayDetector(cfg *config.Config) *DayDetector {
 		pyramidScales:        []float64{0.125}, // OPTIMIZED: Aggressive downsampling for speed (8x smaller)
 		candidateStepSize:    80,               // OPTIMIZED: Larger step size for faster scan
 		stats:                DetectionStats{},
-		enableOCR:            false, // Disable OCR by default (requires Tesseract installation)
 	}
-}
-
-// EnableOCR enables or disables OCR-based detection
-func (d *DayDetector) EnableOCR(enable bool) {
-	d.enableOCR = enable
 }
 
 // SetLanguage sets the current language for template matching
@@ -347,8 +338,6 @@ func (d *DayDetector) detectDay(img image.Image) int {
 	var location *Point
 
 	switch d.strategy {
-	case StrategyOCR:
-		day, location = d.detectWithOCR(img)
 	case StrategyHotspotCache:
 		day, location = d.detectWithHotspotCache(img, template)
 	case StrategyColorFilter:
@@ -377,15 +366,6 @@ func (d *DayDetector) detectDay(img image.Image) int {
 
 // detectDayIntelligent uses multi-layer intelligent detection (Auto strategy)
 func (d *DayDetector) detectDayIntelligent(img image.Image, template *DayTemplate) (int, *Point) {
-	// Layer 0: OCR (if enabled - most reliable but requires Tesseract)
-	if d.enableOCR {
-		day, loc := d.detectWithOCR(img)
-		if day > 0 {
-			d.stats.LastStrategy = StrategyOCR
-			return day, loc
-		}
-	}
-
 	// Layer 1: Hotspot cache (fastest, usually hits)
 	if d.lastMatchLocation != nil {
 		day, loc := d.detectWithHotspotCache(img, template)
@@ -429,52 +409,6 @@ func (d *DayDetector) detectDayIntelligent(img image.Image, template *DayTemplat
 	}
 
 	return day, loc
-}
-
-// detectWithOCR uses OCR to extract the day number from screen
-func (d *DayDetector) detectWithOCR(img image.Image) (int, *Point) {
-	logger.Infof("[%s] Starting OCR detection...", d.Name())
-	bounds := img.Bounds()
-	w, h := bounds.Dx(), bounds.Dy()
-
-	// Define regions where "DAY X" text typically appears
-	ocrRegions := []Rect{
-		// Center region (most common for "DAY X" display)
-		NewRect(int(float64(w)*0.35), int(float64(h)*0.35), int(float64(w)*0.30), int(float64(h)*0.30)),
-		// Wider center region
-		NewRect(int(float64(w)*0.25), int(float64(h)*0.25), int(float64(w)*0.50), int(float64(h)*0.50)),
-		// Top-center
-		NewRect(int(float64(w)*0.30), int(float64(h)*0.05), int(float64(w)*0.40), int(float64(h)*0.20)),
-	}
-
-	// Try OCR on each region
-	for i, region := range ocrRegions {
-		logger.Infof("[%s] Trying OCR region %d (%d, %d, %dx%d)",
-			d.Name(), i+1, region.X, region.Y, region.Width, region.Height)
-
-		// Crop to region
-		regionImg := CropImage(img, region)
-
-		// Try to extract day number using OCR
-		dayNum, err := OCRExtractDayNumber(regionImg)
-		if err != nil {
-			logger.Infof("[%s] OCR region %d failed: %v", d.Name(), i+1, err)
-			continue
-		}
-
-		if dayNum >= 1 && dayNum <= 3 {
-			logger.Infof("[%s] ✅ OCR found Day %d in region %d", d.Name(), dayNum, i+1)
-			// Return center of the region as location
-			centerX := region.X + region.Width/2
-			centerY := region.Y + region.Height/2
-			return dayNum, &Point{X: centerX, Y: centerY}
-		} else {
-			logger.Infof("[%s] OCR region %d got invalid day: %d", d.Name(), i+1, dayNum)
-		}
-	}
-
-	logger.Infof("[%s] ❌ OCR detection failed in all regions", d.Name())
-	return -1, nil
 }
 
 // detectWithHotspotCache searches near the last known location
@@ -559,24 +493,12 @@ func (d *DayDetector) detectWithPredefined(img image.Image, template *DayTemplat
 		NewRect(int(float64(w)*0.02), int(float64(h)*0.02), int(float64(w)*0.20), int(float64(h)*0.15)),
 	}
 
-	// Try all regions and pick the best match across all
-	bestDay := -1
-	bestSimilarity := 0.0
-	var bestLocation *Point
-
 	for _, region := range predefinedRegions {
-		day, loc, similarity := d.matchDayInRegionWithScore(img, template, region)
-		if day > 0 && similarity > bestSimilarity {
-			bestDay = day
-			bestSimilarity = similarity
-			bestLocation = loc
+		day, loc := d.matchDayInRegion(img, template, region)
+		if day > 0 {
+			logger.Debugf("[%s] Found in predefined region at (%d, %d)", d.Name(), loc.X, loc.Y)
+			return day, loc
 		}
-	}
-
-	if bestDay > 0 {
-		logger.Debugf("[%s] Found Day %d in predefined region at (%d, %d) with similarity %.3f",
-			d.Name(), bestDay, bestLocation.X, bestLocation.Y, bestSimilarity)
-		return bestDay, bestLocation
 	}
 
 	return -1, nil
@@ -590,18 +512,19 @@ func (d *DayDetector) detectWithFullScan(img image.Image, template *DayTemplate)
 	return d.matchDayInRegion(img, template, fullRegion)
 }
 
-// matchDayInRegionWithScore tries to match day templates and returns similarity score
-func (d *DayDetector) matchDayInRegionWithScore(img image.Image, template *DayTemplate, region Rect) (int, *Point, float64) {
+// matchDayInRegion tries to match day templates in a specific region
+func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, region Rect) (int, *Point) {
 	// Crop to region
 	regionImg := CropImage(img, region)
 
-	// OPTIMIZATION: Moderate downsampling to preserve digit details (2x reduction)
+	// OPTIMIZATION: Balanced downsampling to preserve Roman numeral details
+	// Use 0.35x scale: preserves enough detail to distinguish I/II/III while staying fast
 	regionBounds := regionImg.Bounds()
-	scale := 0.5 // BALANCED: 2x reduction preserves details while improving speed
+	scale := 0.35 // Balanced: 3x reduction preserves Roman numeral strokes
 	scaledWidth := int(float64(regionBounds.Dx()) * scale)
 	scaledHeight := int(float64(regionBounds.Dy()) * scale)
 
-	if scaledWidth < 80 || scaledHeight < 80 {
+	if scaledWidth < 70 || scaledHeight < 70 {
 		// Region too small after scaling, use original
 		scale = 1.0
 		scaledWidth = regionBounds.Dx()
@@ -614,7 +537,6 @@ func (d *DayDetector) matchDayInRegionWithScore(img image.Image, template *DayTe
 	templates := []image.Image{template.Day1, template.Day2, template.Day3}
 	bestDay := -1
 	bestSimilarity := 0.0
-	secondBestSimilarity := 0.0
 	var bestLocation *Point
 
 	for dayNum, tmpl := range templates {
@@ -624,57 +546,28 @@ func (d *DayDetector) matchDayInRegionWithScore(img image.Image, template *DayTe
 		scaledTmplHeight := int(float64(tmplBounds.Dy()) * scale)
 		scaledTmpl := ResizeImage(tmpl, scaledTmplWidth, scaledTmplHeight)
 
-		// OPTIMIZATION: Use stride=3 for balanced speed/accuracy
-		result, err := TemplateMatchWithStride(scaledRegion, scaledTmpl, d.matchThreshold, 3)
-		if err == nil {
-			logger.Debugf("[%s] Day %d template similarity: %.3f (threshold: %.3f, found: %v)",
-				d.Name(), dayNum+1, result.Similarity, d.matchThreshold, result.Found)
-
-			if result.Found {
-				if result.Similarity > bestSimilarity {
-					// Update second best before updating best
-					secondBestSimilarity = bestSimilarity
-					bestSimilarity = result.Similarity
-					bestDay = dayNum + 1
-					// Adjust location: scale back up and account for region offset
-					bestLocation = &Point{
-						X: region.X + int(float64(result.Location.X)/scale),
-						Y: region.Y + int(float64(result.Location.Y)/scale),
-					}
-				} else if result.Similarity > secondBestSimilarity {
-					// Track second best similarity
-					secondBestSimilarity = result.Similarity
+		result, err := TemplateMatch(scaledRegion, scaledTmpl, d.matchThreshold)
+		if err == nil && result.Found {
+			logger.Debugf("[%s] Day %d template: similarity=%.4f (threshold=%.2f)",
+				d.Name(), dayNum+1, result.Similarity, d.matchThreshold)
+			if result.Similarity > bestSimilarity {
+				bestSimilarity = result.Similarity
+				bestDay = dayNum + 1
+				// Adjust location: scale back up and account for region offset
+				bestLocation = &Point{
+					X: region.X + int(float64(result.Location.X)/scale),
+					Y: region.Y + int(float64(result.Location.Y)/scale),
 				}
 			}
 		}
 	}
 
-	// CONFIDENCE CHECK: If best and second-best are too close, match is unreliable
-	// This handles cases where templates have high similarity due to common background
-	const minConfidenceGap = 0.015 // BALANCED: 1.5% difference required
 	if bestDay > 0 {
-		confidenceGap := bestSimilarity - secondBestSimilarity
-		logger.Debugf("[%s] Best: Day %d (%.3f), Second: (%.3f), Gap: %.3f",
-			d.Name(), bestDay, bestSimilarity, secondBestSimilarity, confidenceGap)
-
-		if confidenceGap < minConfidenceGap {
-			logger.Warningf("[%s] Low confidence match (gap=%.3f < %.3f), rejecting",
-				d.Name(), confidenceGap, minConfidenceGap)
-			return -1, nil, 0.0
-		}
-
-		logger.Debugf("[%s] Matched Day %d with similarity %.3f (confidence gap: %.3f)",
-			d.Name(), bestDay, bestSimilarity, confidenceGap)
-		return bestDay, bestLocation, bestSimilarity
+		logger.Debugf("[%s] Matched Day %d with similarity %.2f", d.Name(), bestDay, bestSimilarity)
+		return bestDay, bestLocation
 	}
 
-	return -1, nil, 0.0
-}
-
-// matchDayInRegion tries to match day templates in a specific region
-func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, region Rect) (int, *Point) {
-	day, loc, _ := d.matchDayInRegionWithScore(img, template, region)
-	return day, loc
+	return -1, nil
 }
 
 // detectDayMock provides mock day detection for testing
