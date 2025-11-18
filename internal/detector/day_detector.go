@@ -183,12 +183,25 @@ func (d *DayDetector) Initialize() error {
 
 // loadTemplates loads day number templates from the data directory
 func (d *DayDetector) loadTemplates() error {
-	// Get the data directory path
-	dataDir := "data/day_template"
+	// Get the data directory path, try multiple possible locations
+	possiblePaths := []string{
+		"data/day_template",         // When running from project root
+		"../../data/day_template",   // When running tests
+		"../data/day_template",      // Alternative location
+	}
 
-	// Check if directory exists
-	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
-		return fmt.Errorf("template directory not found: %s", dataDir)
+	var dataDir string
+	var found bool
+	for _, path := range possiblePaths {
+		if _, err := os.Stat(path); err == nil {
+			dataDir = path
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("template directory not found in any of: %v", possiblePaths)
 	}
 
 	// Languages to load
