@@ -130,6 +130,9 @@ func TestDayDetectorDetect(t *testing.T) {
 
 // TestDayDetectorCalculateTimes tests time calculation logic
 func TestDayDetectorCalculateTimes(t *testing.T) {
+	//Elapsed Time (已流逝时间)
+	//Shrink Time (缩圈倒计时)
+	//Next Phase Time (下阶段倒计时)
 	cfg := &config.Config{
 		DayPeriodSeconds: []int{270, 180, 210, 180}, // 4.5min, 3min, 3.5min, 3min
 		UpdateInterval:   0.1,
@@ -487,7 +490,8 @@ func TestRealGameScreenshots(t *testing.T) {
 		expectedDay int
 		description string
 	}{
-		{"Day1.png", 1, "Game screenshot showing Day 1"},
+		{"Day1_test1.jpg", 1, "Game screenshot showing Day 1"},
+		{"Day1_test2.jpg", 1, "Game screenshot showing Day 1"},
 		{"Day2.png", 2, "Game screenshot showing Day 2"},
 		{"Day3.png", 3, "Game screenshot showing Day 3"},
 	}
