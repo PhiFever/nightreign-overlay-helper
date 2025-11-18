@@ -43,6 +43,10 @@ type Updater struct {
 	// Statistics
 	updateCount    uint64
 	lastUpdateTime time.Time
+
+	// Cache for last results to avoid duplicate logging
+	lastResults map[string]string
+	resultsMu   sync.Mutex
 }
 
 // NewUpdater creates a new updater
@@ -54,6 +58,7 @@ func NewUpdater(cfg *config.Config, registry *detector.DetectorRegistry) *Update
 		stopChan:    make(chan struct{}),
 		doneChan:    make(chan struct{}),
 		captureFunc: mockCapture, // Use mock capture for now
+		lastResults: make(map[string]string),
 	}
 }
 
@@ -219,9 +224,24 @@ func (u *Updater) handleResult(result DetectorResult) {
 		return
 	}
 
+	// Convert result to string for comparison
+	resultStr := fmt.Sprintf("%v", result.Result)
+
+	// Check if result has changed
+	u.resultsMu.Lock()
+	lastResult, exists := u.lastResults[result.DetectorName]
+	shouldLog := !exists || lastResult != resultStr
+	if shouldLog {
+		u.lastResults[result.DetectorName] = resultStr
+	}
+	u.resultsMu.Unlock()
+
+	// Only log if result changed
+	if shouldLog {
+		logger.Infof("[Updater] %s: %v", result.DetectorName, result.Result)
+	}
+
 	// TODO: Update UI with result
-	// For now, just log it at debug level
-	logger.Debugf("[Updater] Result from %s: %v", result.DetectorName, result.Result)
 }
 
 // GetStatistics returns updater statistics

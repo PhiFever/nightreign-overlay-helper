@@ -86,21 +86,34 @@ func (d *DayDetector) Detect(img image.Image) (interface{}, error) {
 	}
 	d.lastUpdateTime = now
 
-	// TODO: Actual detection logic
-	// For now, return a mock result
+	// Detect day and phase from the image
+	day := d.detectDay(img)
+	phase := d.detectPhase(img)
+
+	// If detection failed, return the last result
+	if day < 0 || phase < 0 {
+		result := &DayResult{
+			IsDetected:   false,
+			LastUpdateAt: now,
+		}
+		d.lastResult = result
+		return result, nil
+	}
+
+	// Calculate timing information
+	elapsed, shrink, nextPhase := d.calculateTimes(day, phase)
+
 	result := &DayResult{
-		Day:          1,
-		Phase:        2,
-		ElapsedTime:  5 * time.Minute,
-		ShrinkTime:   2 * time.Minute,
-		NextPhaseIn:  30 * time.Second,
+		Day:          day,
+		Phase:        phase,
+		ElapsedTime:  elapsed,
+		ShrinkTime:   shrink,
+		NextPhaseIn:  nextPhase,
 		IsDetected:   true,
 		LastUpdateAt: now,
 	}
 
 	d.lastResult = result
-	logger.Debugf("[%s] %s", d.Name(), result.String())
-
 	return result, nil
 }
 
@@ -123,37 +136,61 @@ func (d *DayDetector) GetLastResult() *DayResult {
 // detectDay detects the current day from the image
 // Returns -1 if not detected
 func (d *DayDetector) detectDay(img image.Image) int {
-	// TODO: Implement template matching for day numbers
-	// Crop the day region
-	// dayImg := CropImage(img, d.dayRegion)
-	// Match against day templates
-	// Return detected day number
-	return -1
+	// TODO: Implement template matching for day numbers using OCR
+	// For now, implement a simple mock detector that cycles through days
+	// This is for testing the framework
+
+	// Simulate detecting Day 1-3 based on time
+	seconds := time.Now().Unix() % 30
+	if seconds < 10 {
+		return 1
+	} else if seconds < 20 {
+		return 2
+	} else {
+		return 3
+	}
 }
 
 // detectPhase detects the current phase from the image
 // Returns -1 if not detected
 func (d *DayDetector) detectPhase(img image.Image) int {
 	// TODO: Implement template matching for phase markers
-	// Crop the phase region
-	// phaseImg := CropImage(img, d.phaseRegion)
-	// Match against phase templates
-	// Return detected phase number
-	return -1
+	// For now, simulate phase detection that cycles 0-3
+
+	// Simulate detecting phases 0-3 based on time
+	seconds := time.Now().Unix() % 20
+	return int(seconds / 5) // Returns 0, 1, 2, or 3
 }
 
 // calculateTimes calculates elapsed time, shrink time, and next phase time
 func (d *DayDetector) calculateTimes(day, phase int) (elapsed, shrink, nextPhase time.Duration) {
-	// TODO: Implement time calculations based on game mechanics
-	// This requires knowledge of:
-	// - Phase durations
-	// - Shrink timings
-	// - Day progression rules
+	// Calculate based on game configuration
+	if day < 0 || phase < 0 || phase >= len(d.config.DayPeriodSeconds) {
+		return 0, 0, 0
+	}
 
-	// For now, return mock values
-	elapsed = time.Duration(day*20+phase*5) * time.Minute
-	shrink = 2 * time.Minute
-	nextPhase = 30 * time.Second
+	// Calculate elapsed time from start of day
+	elapsedSeconds := 0
+	for i := 0; i < phase; i++ {
+		if i < len(d.config.DayPeriodSeconds) {
+			elapsedSeconds += d.config.DayPeriodSeconds[i]
+		}
+	}
+
+	// Add current phase elapsed time (mock - in real version this would be detected)
+	currentPhaseElapsed := int(time.Now().Unix() % int64(d.config.DayPeriodSeconds[phase]))
+	elapsedSeconds += currentPhaseElapsed
+
+	elapsed = time.Duration(elapsedSeconds) * time.Second
+
+	// Calculate time until next shrink
+	if phase < len(d.config.DayPeriodSeconds) {
+		shrinkSeconds := d.config.DayPeriodSeconds[phase] - currentPhaseElapsed
+		shrink = time.Duration(shrinkSeconds) * time.Second
+	}
+
+	// Next phase is the same as shrink time for now
+	nextPhase = shrink
 
 	return elapsed, shrink, nextPhase
 }
