@@ -6,7 +6,7 @@
 
 **当前版本**: v0.9.0
 **重构启动时间**: 2025-11-17
-**当前阶段**: Phase 1 - 核心基础设施 ✅
+**当前阶段**: Phase 2 - 检测器层 ⏳ (进行中)
 
 ---
 
@@ -25,10 +25,14 @@ nightreign-overlay-helper/
 │   │   └── loader.go            ✅ 配置加载器
 │   ├── logger/
 │   │   └── logger.go            ✅ 日志系统
-│   ├── detector/                ⏳ 待实现
+│   ├── detector/
+│   │   ├── base.go              ✅ 检测器基础接口
+│   │   ├── utils.go             ✅ 图像处理工具
+│   │   └── day_detector.go      ✅ Day检测器(最小可用)
+│   ├── updater/
+│   │   └── updater.go           ✅ 更新调度器
 │   ├── ui/                      ⏳ 待实现
-│   ├── input/                   ⏳ 待实现
-│   └── updater/                 ⏳ 待实现
+│   └── input/                   ⏳ 待实现
 ├── pkg/
 │   ├── version/
 │   │   └── version.go           ✅ 版本信息
@@ -82,6 +86,9 @@ nightreign-overlay-helper/
 - ✅ 日志系统初始化
 - ✅ 配置加载
 - ✅ 程序信息输出
+- ✅ 检测器注册和初始化
+- ✅ Updater启动和管理
+- ✅ 优雅关闭机制
 
 ### 1.3 编译和运行
 
@@ -119,41 +126,75 @@ require gopkg.in/yaml.v3 v3.0.1
 
 ---
 
-## Phase 2: 检测器层 (下一步)
+## Phase 2: 检测器层 (进行中 ⏳)
 
-### 2.1 计划实施顺序
+### 2.1 已实现功能
 
-1. **检测器基础框架** ⏳
-   - [ ] Detector 接口定义
-   - [ ] 图像预处理工具
-   - [ ] 模板匹配算法基础
+#### 检测器基础框架 (internal/detector) ✅
+- ✅ **Detector 接口定义** (`base.go`)
+  - `Detector` 核心接口：Name(), Detect(), Initialize(), Cleanup(), IsEnabled(), SetEnabled()
+  - `BaseDetector` 基础实现：提供通用功能
+  - `DetectorRegistry` 检测器注册表：管理所有检测器的生命周期
+- ✅ **图像处理工具** (`utils.go`)
+  - 几何类型：Point, Rect
+  - 图像操作：CropImage(), ResizeImage()
+  - 色彩空间转换：RGB2Gray(), RGB2HSV(), RGB2HLS()
+  - 图像分析：CreateMask(), CountNonZero(), InRange(), CalculateSimilarity()
 
-2. **Day Detector (日期检测)** ⏳
-   - [ ] 移植Python版本的检测逻辑
+#### Updater 系统 (internal/updater) ✅
+- ✅ 检测循环调度器
+- ✅ 多检测器并发执行
+- ✅ 结果处理和缓存（避免重复日志）
+- ✅ 优雅关闭机制
+- ✅ 屏幕截图抽象接口
+
+#### Day Detector (日期检测) ✅
+- ✅ **最小可用版本实现**
+  - Day (天数) 检测 - 当前使用模拟数据
+  - Phase (阶段) 检测 - 当前使用模拟数据
+  - ✅ 基于配置的时间计算
+    - Elapsed Time (已流逝时间)
+    - Shrink Time (缩圈倒计时)
+    - Next Phase Time (下阶段倒计时)
+  - ✅ 结果格式化输出
+  - ✅ 速率限制（rate limiting）
+
+**运行输出示例**:
+```
+2025-11-18 01:57:55 [INFO] [Updater] Detection loop started (interval: 100ms)
+2025-11-18 01:57:55 [INFO] [Updater] DayDetector: Day 3 Phase 3 | Elapsed: 11m55s | Shrink in: 2m5s | Next phase in: 2m5s
+2025-11-18 01:58:00 [INFO] [Updater] DayDetector: Day 1 Phase 0 | Elapsed: 1m0s | Shrink in: 3m30s | Next phase in: 3m29s
+2025-11-18 01:58:05 [INFO] [Updater] DayDetector: Day 1 Phase 1 | Elapsed: 5m35s | Shrink in: 1m55s | Next phase in: 1m55s
+```
+
+### 2.2 待实现功能
+
+1. **Day Detector 完整实现** ⏳
+   - [ ] 集成OCR/模板匹配（替换模拟数据）
    - [ ] 模板图片加载
-   - [ ] 多语言支持
-   - [ ] 缩圈时间计算
+   - [ ] 多语言支持 (简中/繁中/英文/日文)
+   - [ ] 真实屏幕截图集成
 
-3. **HP Detector (血量检测)** ⏳
+2. **HP Detector (血量检测)** ⏳
    - [ ] 血条区域识别
    - [ ] HLS色彩空间转换
    - [ ] 血量百分比计算
 
-4. **Rain Detector (雨天检测)** ⏳
+3. **Rain Detector (雨天检测)** ⏳
    - [ ] 血条颜色分析
    - [ ] 雨天状态判断
 
-5. **Map Detector (地图检测)** ⏳
+4. **Map Detector (地图检测)** ⏳
    - [ ] 霍夫圆检测
    - [ ] 地图模式识别
    - [ ] 特殊地形检测
 
-6. **Art Detector (绝招检测)** ⏳
+5. **Art Detector (绝招检测)** ⏳
    - [ ] 技能图标模板匹配
    - [ ] 多角色支持
    - [ ] 技能时间计算
 
-### 2.2 技术需求
+### 2.3 技术需求
 
 为实现检测器层，需要集成以下依赖：
 
@@ -195,21 +236,32 @@ require (
 
 | 模块 | Python | Golang | 状态 |
 |------|--------|--------|------|
-| 配置管理 | PyYAML + dataclass | viper/yaml.v3 | ✅ |
+| 配置管理 | PyYAML + dataclass | yaml.v3 | ✅ |
 | 日志系统 | logging + 自定义 | 自定义logger | ✅ |
 | 版本管理 | common.py | pkg/version | ✅ |
 | 工具函数 | common.py | pkg/utils | ✅ |
+| 检测器框架 | detector/base.py | detector/base.go | ✅ |
+| 图像工具 | OpenCV (cv2) | 纯Go实现 | ✅ |
+| 更新调度器 | updater.py | updater/updater.go | ✅ |
+| Day检测器 | day_detector.py | day_detector.go | ⏳ (最小可用) |
 
 ### 代码量对比
 
 | 模块 | Python (行) | Golang (行) | 减少/增加 |
 |------|------------|------------|----------|
 | 配置管理 | ~80 | ~120 | +50% (类型安全) |
-| 日志系统 | ~60 | ~180 | +200% (功能增强) |
+| 日志系统 | ~60 | ~200 | +233% (功能增强) |
 | 工具函数 | ~75 | ~100 | +33% |
-| **总计** | ~215 | ~400 | +86% |
+| 检测器基础 | ~100 | ~130 | +30% |
+| 图像工具 | ~150 | ~270 | +80% (无OpenCV依赖) |
+| Updater | ~120 | ~245 | +104% (并发优化) |
+| Day检测器 | ~200 | ~185 | -8% (简化版) |
+| **总计** | ~785 | ~1,250 | +59% |
 
-> 注: Golang代码行数较多主要是因为显式类型定义和更完善的错误处理
+> 注: Golang代码行数较多主要是因为：
+> 1. 显式类型定义和更完善的错误处理
+> 2. 自实现图像处理工具（暂未使用OpenCV）
+> 3. 更完善的并发控制和资源管理
 
 ---
 
@@ -225,23 +277,36 @@ require (
 
 ## 下一步行动
 
-1. **安装 OpenCV 开发环境**
-   ```bash
-   # Ubuntu/Debian
-   sudo apt-get install libopencv-dev
+### 当前优先级
 
-   # macOS
-   brew install opencv
-   ```
+1. **完善 Day Detector** 🎯
+   - [ ] 实现真实的OCR/模板匹配（替换模拟数据）
+   - [ ] 加载Day数字模板图片
+   - [ ] 实现多语言支持
+   - [ ] 集成屏幕截图功能
 
-2. **实现检测器基础接口**
-   - 创建 `internal/detector/base.go`
-   - 定义 `Detector` 接口
-   - 实现图像处理工具函数
+2. **实现屏幕截图** ⏳
+   - [ ] 选择截图库 (screenshot或gocv)
+   - [ ] 实现窗口检测（查找游戏窗口）
+   - [ ] 实现定时截图
 
-3. **移植 Day Detector**
-   - 参考 `src/detector/day_detector.py`
-   - 实现模板匹配逻辑
+3. **实现 HP Detector**
+   - [ ] 血条区域识别
+   - [ ] 血量百分比计算
+   - [ ] HLS色彩空间转换优化
+
+### 技术选型讨论
+
+**图像处理方案**:
+- **方案A**: 使用 gocv (OpenCV绑定)
+  - 优点: 功能完整，性能好
+  - 缺点: 需要安装OpenCV依赖，部署复杂
+
+- **方案B**: 使用纯Go库 (当前)
+  - 优点: 无外部依赖，部署简单
+  - 缺点: 功能有限，需要自己实现算法
+
+**当前选择**: 方案B（纯Go实现基础功能）+ 后续评估是否需要方案A
 
 ---
 
@@ -254,6 +319,6 @@ require (
 
 ---
 
-**最后更新**: 2025-11-17
+**最后更新**: 2025-11-18
 **负责人**: Claude Code
-**状态**: Phase 1 完成 ✅，准备进入 Phase 2
+**状态**: Phase 2 进行中 ⏳ (检测器基础框架 ✅, Day Detector 最小可用版本 ✅)
