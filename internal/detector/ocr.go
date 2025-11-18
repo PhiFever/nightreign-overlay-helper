@@ -96,23 +96,23 @@ func OCRExtractDayNumber(img image.Image) (int, error) {
 	}
 
 	if !result.Found || result.Text == "" {
-		return -1, fmt.Errorf("no day number found")
+		return -1, fmt.Errorf("no day number found (OCR returned empty)")
 	}
 
 	digitRegex := regexp.MustCompile(`(\d+)`)
 	matches := digitRegex.FindStringSubmatch(result.Text)
 
 	if len(matches) < 2 {
-		return -1, fmt.Errorf("no digit in text: %s", result.Text)
+		return -1, fmt.Errorf("no digit in OCR text: '%s'", result.Text)
 	}
 
 	dayNum, err := strconv.Atoi(matches[1])
 	if err != nil {
-		return -1, fmt.Errorf("invalid day number: %s", matches[1])
+		return -1, fmt.Errorf("invalid day number in '%s': %s", result.Text, matches[1])
 	}
 
 	if dayNum < 1 || dayNum > 3 {
-		return -1, fmt.Errorf("day number out of range: %d", dayNum)
+		return -1, fmt.Errorf("day number out of range: %d (from OCR text: '%s')", dayNum, result.Text)
 	}
 
 	return dayNum, nil
