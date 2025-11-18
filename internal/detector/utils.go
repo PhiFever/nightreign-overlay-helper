@@ -266,3 +266,113 @@ func CalculateSimilarity(img1, img2 *image.Gray) (float64, error) {
 
 	return similarity, nil
 }
+
+// MatchResult represents the result of template matching
+type MatchResult struct {
+	Location   Point   // Top-left corner of the match
+	Similarity float64 // Similarity score (0-1)
+	Found      bool    // Whether a match was found
+}
+
+// TemplateMatch performs template matching on a source image
+// Returns the location and similarity of the best match
+func TemplateMatch(source, template image.Image, threshold float64) (*MatchResult, error) {
+	// Convert images to grayscale
+	srcGray := RGB2Gray(source)
+	tmplGray := RGB2Gray(template)
+
+	srcBounds := srcGray.Bounds()
+	tmplBounds := tmplGray.Bounds()
+
+	tmplWidth := tmplBounds.Dx()
+	tmplHeight := tmplBounds.Dy()
+	srcWidth := srcBounds.Dx()
+	srcHeight := srcBounds.Dy()
+
+	if tmplWidth > srcWidth || tmplHeight > srcHeight {
+		return &MatchResult{Found: false}, fmt.Errorf("template is larger than source image")
+	}
+
+	bestMatch := &MatchResult{
+		Similarity: 0.0,
+		Found:      false,
+	}
+
+	// Slide the template across the source image
+	for y := 0; y <= srcHeight-tmplHeight; y++ {
+		for x := 0; x <= srcWidth-tmplWidth; x++ {
+			// Extract region of interest from source
+			roi := extractROI(srcGray, x, y, tmplWidth, tmplHeight)
+
+			// Calculate similarity
+			similarity, err := CalculateSimilarity(roi, tmplGray)
+			if err != nil {
+				continue
+			}
+
+			// Update best match
+			if similarity > bestMatch.Similarity {
+				bestMatch.Similarity = similarity
+				bestMatch.Location = Point{X: x, Y: y}
+			}
+		}
+	}
+
+	// Check if we found a match above threshold
+	if bestMatch.Similarity >= threshold {
+		bestMatch.Found = true
+	}
+
+	return bestMatch, nil
+}
+
+// extractROI extracts a region of interest from a grayscale image
+func extractROI(img *image.Gray, x, y, width, height int) *image.Gray {
+	bounds := img.Bounds()
+	roi := image.NewGray(image.Rect(0, 0, width, height))
+
+	for dy := 0; dy < height; dy++ {
+		for dx := 0; dx < width; dx++ {
+			srcX := bounds.Min.X + x + dx
+			srcY := bounds.Min.Y + y + dy
+
+			if srcX < bounds.Max.X && srcY < bounds.Max.Y {
+				roi.SetGray(dx, dy, img.GrayAt(srcX, srcY))
+			}
+		}
+	}
+
+	return roi
+}
+
+// TemplateMatchMultiple matches a template against multiple source regions
+// Returns the best match across all regions
+func TemplateMatchMultiple(source image.Image, template image.Image, regions []Rect, threshold float64) (*MatchResult, error) {
+	bestMatch := &MatchResult{
+		Similarity: 0.0,
+		Found:      false,
+	}
+
+	for _, region := range regions {
+		// Crop source to region
+		cropped := CropImage(source, region)
+
+		// Perform template matching
+		result, err := TemplateMatch(cropped, template, threshold)
+		if err != nil {
+			continue
+		}
+
+		// Adjust location to account for region offset
+		if result.Found && result.Similarity > bestMatch.Similarity {
+			bestMatch.Similarity = result.Similarity
+			bestMatch.Location = Point{
+				X: region.X + result.Location.X,
+				Y: region.Y + result.Location.Y,
+			}
+			bestMatch.Found = true
+		}
+	}
+
+	return bestMatch, nil
+}

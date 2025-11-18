@@ -3,6 +3,9 @@ package detector
 import (
 	"fmt"
 	"image"
+	_ "image/png" // Import PNG decoder
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/PhiFever/nightreign-overlay-helper/internal/config"
@@ -29,6 +32,14 @@ func (r *DayResult) String() string {
 		r.Day, r.Phase, r.ElapsedTime, r.ShrinkTime, r.NextPhaseIn)
 }
 
+// DayTemplate represents templates for a specific language
+type DayTemplate struct {
+	Language string
+	Day1     image.Image
+	Day2     image.Image
+	Day3     image.Image
+}
+
 // DayDetector detects the current day and phase in the game
 type DayDetector struct {
 	*BaseDetector
@@ -36,41 +47,130 @@ type DayDetector struct {
 	lastResult *DayResult
 
 	// Detection regions
-	dayRegion   Rect
-	phaseRegion Rect
+	dayRegion Rect
 
-	// Template cache (will be loaded from assets)
-	// templates map[string]*image.Gray
+	// Template cache
+	templates map[string]*DayTemplate
+
+	// Current language
+	currentLang string
 
 	// Configuration
-	updateInterval time.Duration
-	lastUpdateTime time.Time
+	updateInterval    time.Duration
+	lastUpdateTime    time.Time
+	matchThreshold    float64
+	enableTemplateMatch bool
 }
 
 // NewDayDetector creates a new day detector
 func NewDayDetector(cfg *config.Config) *DayDetector {
 	return &DayDetector{
-		BaseDetector:   NewBaseDetector("DayDetector"),
-		config:         cfg,
-		updateInterval: time.Duration(cfg.UpdateInterval * float64(time.Second)),
+		BaseDetector:      NewBaseDetector("DayDetector"),
+		config:            cfg,
+		updateInterval:    time.Duration(cfg.UpdateInterval * float64(time.Second)),
+		templates:         make(map[string]*DayTemplate),
+		currentLang:       "chs", // Default to simplified Chinese
+		matchThreshold:    0.8,   // Default threshold
+		enableTemplateMatch: false, // Disable by default (use mock mode)
 		lastResult: &DayResult{
 			IsDetected: false,
 		},
 	}
 }
 
+// SetLanguage sets the current language for template matching
+func (d *DayDetector) SetLanguage(lang string) {
+	d.currentLang = lang
+}
+
+// EnableTemplateMatching enables or disables template matching
+func (d *DayDetector) EnableTemplateMatching(enable bool) {
+	d.enableTemplateMatch = enable
+}
+
+// SetMatchThreshold sets the similarity threshold for template matching
+func (d *DayDetector) SetMatchThreshold(threshold float64) {
+	d.matchThreshold = threshold
+}
+
 // Initialize initializes the day detector
 func (d *DayDetector) Initialize() error {
 	logger.Infof("[%s] Initializing...", d.Name())
 
-	// TODO: Load templates from assets
-	// For now, we'll use placeholder detection regions
-	// These should be loaded from config or calibrated
+	// Load templates from data directory
+	if err := d.loadTemplates(); err != nil {
+		logger.Warningf("[%s] Failed to load templates: %v (using mock mode)", d.Name(), err)
+		// Don't return error - we can still run in mock mode
+	} else {
+		logger.Infof("[%s] Templates loaded successfully", d.Name())
+	}
+
+	// Set default detection region (should be calibrated for actual game)
 	d.dayRegion = NewRect(100, 50, 200, 50)
-	d.phaseRegion = NewRect(100, 100, 200, 50)
 
 	logger.Infof("[%s] Initialized successfully", d.Name())
 	return nil
+}
+
+// loadTemplates loads day number templates from the data directory
+func (d *DayDetector) loadTemplates() error {
+	// Get the data directory path
+	dataDir := "data/day_template"
+
+	// Check if directory exists
+	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
+		return fmt.Errorf("template directory not found: %s", dataDir)
+	}
+
+	// Languages to load
+	languages := []string{"chs", "cht", "eng", "jp"}
+
+	for _, lang := range languages {
+		template := &DayTemplate{
+			Language: lang,
+		}
+
+		// Load day 1, 2, 3 templates
+		for day := 1; day <= 3; day++ {
+			filename := filepath.Join(dataDir, fmt.Sprintf("%s_%d.png", lang, day))
+
+			img, err := loadImageFromFile(filename)
+			if err != nil {
+				return fmt.Errorf("failed to load template %s: %w", filename, err)
+			}
+
+			// Store template
+			switch day {
+			case 1:
+				template.Day1 = img
+			case 2:
+				template.Day2 = img
+			case 3:
+				template.Day3 = img
+			}
+		}
+
+		d.templates[lang] = template
+		logger.Debugf("[%s] Loaded templates for language: %s", d.Name(), lang)
+	}
+
+	return nil
+}
+
+// loadImageFromFile loads an image from a file
+func loadImageFromFile(filename string) (image.Image, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	img, _, err := image.Decode(file)
+	if err != nil {
+		return nil, err
+	}
+
+	return img, nil
 }
 
 // Detect performs day detection on the given image
@@ -121,7 +221,8 @@ func (d *DayDetector) Detect(img image.Image) (interface{}, error) {
 func (d *DayDetector) Cleanup() error {
 	logger.Infof("[%s] Cleaning up...", d.Name())
 
-	// TODO: Release template resources
+	// Clear templates
+	d.templates = nil
 	d.lastResult = nil
 
 	logger.Infof("[%s] Cleaned up successfully", d.Name())
@@ -136,10 +237,60 @@ func (d *DayDetector) GetLastResult() *DayResult {
 // detectDay detects the current day from the image
 // Returns -1 if not detected
 func (d *DayDetector) detectDay(img image.Image) int {
-	// TODO: Implement template matching for day numbers using OCR
-	// For now, implement a simple mock detector that cycles through days
-	// This is for testing the framework
+	// If template matching is disabled, use mock mode
+	if !d.enableTemplateMatch {
+		return d.detectDayMock()
+	}
 
+	// Get template for current language
+	template, ok := d.templates[d.currentLang]
+	if !ok {
+		logger.Warningf("[%s] No template found for language: %s", d.Name(), d.currentLang)
+		return d.detectDayMock()
+	}
+
+	// Crop image to day detection region
+	dayImg := CropImage(img, d.dayRegion)
+
+	// Try to match each day template
+	bestDay := -1
+	bestSimilarity := 0.0
+
+	// Match Day 1
+	if result, err := TemplateMatch(dayImg, template.Day1, d.matchThreshold); err == nil && result.Found {
+		if result.Similarity > bestSimilarity {
+			bestSimilarity = result.Similarity
+			bestDay = 1
+		}
+	}
+
+	// Match Day 2
+	if result, err := TemplateMatch(dayImg, template.Day2, d.matchThreshold); err == nil && result.Found {
+		if result.Similarity > bestSimilarity {
+			bestSimilarity = result.Similarity
+			bestDay = 2
+		}
+	}
+
+	// Match Day 3
+	if result, err := TemplateMatch(dayImg, template.Day3, d.matchThreshold); err == nil && result.Found {
+		if result.Similarity > bestSimilarity {
+			bestSimilarity = result.Similarity
+			bestDay = 3
+		}
+	}
+
+	if bestDay > 0 {
+		logger.Debugf("[%s] Detected day %d with similarity %.2f", d.Name(), bestDay, bestSimilarity)
+		return bestDay
+	}
+
+	// If no match found, return -1
+	return -1
+}
+
+// detectDayMock provides mock day detection for testing
+func (d *DayDetector) detectDayMock() int {
 	// Simulate detecting Day 1-3 based on time
 	seconds := time.Now().Unix() % 30
 	if seconds < 10 {

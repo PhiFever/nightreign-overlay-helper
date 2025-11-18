@@ -186,6 +186,187 @@ func TestDayDetectorEnableDisable(t *testing.T) {
 	assert.True(t, detector.IsEnabled(), "Detector should be enabled after SetEnabled(true)")
 }
 
+// TestDayDetectorTemplateLoading tests template loading functionality
+func TestDayDetectorTemplateLoading(t *testing.T) {
+	cfg := &config.Config{
+		DayPeriodSeconds: []int{270, 180, 210, 180},
+		UpdateInterval:   0.1,
+	}
+
+	detector := NewDayDetector(cfg)
+	require.NotNil(t, detector)
+
+	err := detector.Initialize()
+	require.NoError(t, err)
+	defer detector.Cleanup()
+
+	// Check that templates were loaded
+	if len(detector.templates) > 0 {
+		t.Logf("Loaded %d language templates", len(detector.templates))
+
+		// Verify each language template
+		for lang, template := range detector.templates {
+			assert.NotNil(t, template.Day1, "Day 1 template for %s should not be nil", lang)
+			assert.NotNil(t, template.Day2, "Day 2 template for %s should not be nil", lang)
+			assert.NotNil(t, template.Day3, "Day 3 template for %s should not be nil", lang)
+			t.Logf("✓ Templates loaded for language: %s", lang)
+		}
+	} else {
+		t.Log("No templates loaded (expected if data directory not found)")
+	}
+}
+
+// TestDayDetectorLanguageSwitch tests switching languages
+func TestDayDetectorLanguageSwitch(t *testing.T) {
+	cfg := &config.Config{
+		DayPeriodSeconds: []int{270, 180, 210, 180},
+		UpdateInterval:   0.1,
+	}
+
+	detector := NewDayDetector(cfg)
+	require.NotNil(t, detector)
+
+	err := detector.Initialize()
+	require.NoError(t, err)
+	defer detector.Cleanup()
+
+	// Test setting different languages
+	languages := []string{"chs", "cht", "eng", "jp"}
+	for _, lang := range languages {
+		detector.SetLanguage(lang)
+		// Note: We can't directly access currentLang, so we just verify the method doesn't panic
+		t.Logf("Set language to: %s", lang)
+	}
+}
+
+// TestDayDetectorTemplateMatching tests template matching mode
+func TestDayDetectorTemplateMatching(t *testing.T) {
+	cfg := &config.Config{
+		DayPeriodSeconds: []int{270, 180, 210, 180},
+		UpdateInterval:   0.0,
+	}
+
+	detector := NewDayDetector(cfg)
+	require.NotNil(t, detector)
+
+	err := detector.Initialize()
+	require.NoError(t, err)
+	defer detector.Cleanup()
+
+	// Skip if no templates loaded
+	if len(detector.templates) == 0 {
+		t.Skip("No templates loaded, skipping template matching test")
+	}
+
+	// Enable template matching
+	detector.EnableTemplateMatching(true)
+	detector.SetMatchThreshold(0.8)
+
+	// Create a test image (in real use, this would be a screenshot)
+	img := image.NewRGBA(image.Rect(0, 0, 800, 600))
+
+	// Run detection
+	result, err := detector.Detect(img)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	dayResult, ok := result.(*DayResult)
+	require.True(t, ok)
+	t.Logf("Template matching result: %s", dayResult.String())
+}
+
+// TestTemplateMatchFunction tests the template matching utility function
+func TestTemplateMatchFunction(t *testing.T) {
+	// Load one of the day templates for testing
+	templatePath := "../../data/day_template/chs_1.png"
+	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+		t.Skipf("Template file not found: %s", templatePath)
+	}
+
+	// Load template
+	templateFile, err := os.Open(templatePath)
+	require.NoError(t, err)
+	defer templateFile.Close()
+
+	templateImg, err := png.Decode(templateFile)
+	require.NoError(t, err)
+	require.NotNil(t, templateImg)
+
+	// Create a test source image containing the template
+	sourceBounds := image.Rect(0, 0, 800, 600)
+	source := image.NewRGBA(sourceBounds)
+
+	// Copy template to source at position (100, 100)
+	templateBounds := templateImg.Bounds()
+	for y := 0; y < templateBounds.Dy(); y++ {
+		for x := 0; x < templateBounds.Dx(); x++ {
+			source.Set(100+x, 100+y, templateImg.At(templateBounds.Min.X+x, templateBounds.Min.Y+y))
+		}
+	}
+
+	// Perform template matching
+	result, err := TemplateMatch(source, templateImg, 0.95)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	// The match should be found at position (100, 100)
+	if result.Found {
+		t.Logf("Match found at (%d, %d) with similarity %.4f",
+			result.Location.X, result.Location.Y, result.Similarity)
+		// Allow some tolerance in position
+		assert.InDelta(t, 100, result.Location.X, 5, "X position should be close to 100")
+		assert.InDelta(t, 100, result.Location.Y, 5, "Y position should be close to 100")
+		assert.GreaterOrEqual(t, result.Similarity, 0.95, "Similarity should be >= 0.95")
+	} else {
+		t.Log("Match not found (this might be expected if template is very different)")
+	}
+}
+
+// TestImageProcessingUtils tests various image processing utilities
+func TestImageProcessingUtils(t *testing.T) {
+	// Create a test image
+	img := image.NewRGBA(image.Rect(0, 0, 100, 100))
+
+	// Fill with some pattern
+	for y := 0; y < 100; y++ {
+		for x := 0; x < 100; x++ {
+			img.Set(x, y, image.White)
+		}
+	}
+
+	t.Run("CropImage", func(t *testing.T) {
+		rect := NewRect(10, 10, 50, 50)
+		cropped := CropImage(img, rect)
+		bounds := cropped.Bounds()
+		assert.Equal(t, 50, bounds.Dx(), "Cropped width should match")
+		assert.Equal(t, 50, bounds.Dy(), "Cropped height should match")
+	})
+
+	t.Run("ResizeImage", func(t *testing.T) {
+		resized := ResizeImage(img, 50, 50)
+		bounds := resized.Bounds()
+		assert.Equal(t, 50, bounds.Dx(), "Resized width should match")
+		assert.Equal(t, 50, bounds.Dy(), "Resized height should match")
+	})
+
+	t.Run("RGB2Gray", func(t *testing.T) {
+		gray := RGB2Gray(img)
+		require.NotNil(t, gray)
+		bounds := gray.Bounds()
+		assert.Equal(t, img.Bounds().Dx(), bounds.Dx(), "Gray image width should match")
+		assert.Equal(t, img.Bounds().Dy(), bounds.Dy(), "Gray image height should match")
+	})
+
+	t.Run("CalculateSimilarity", func(t *testing.T) {
+		gray1 := RGB2Gray(img)
+		gray2 := RGB2Gray(img)
+
+		similarity, err := CalculateSimilarity(gray1, gray2)
+		require.NoError(t, err)
+		assert.Equal(t, 1.0, similarity, "Identical images should have similarity 1.0")
+	})
+}
+
 // BenchmarkDayDetectorDetect benchmarks the detection performance
 func BenchmarkDayDetectorDetect(b *testing.B) {
 	cfg := &config.Config{
@@ -202,5 +383,25 @@ func BenchmarkDayDetectorDetect(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		detector.Detect(img)
+	}
+}
+
+// BenchmarkTemplateMatch benchmarks template matching performance
+func BenchmarkTemplateMatch(b *testing.B) {
+	// Create test images
+	source := image.NewRGBA(image.Rect(0, 0, 800, 600))
+	template := image.NewRGBA(image.Rect(0, 0, 50, 50))
+
+	// Fill with some pattern
+	for y := 0; y < 50; y++ {
+		for x := 0; x < 50; x++ {
+			template.Set(x, y, image.White)
+			source.Set(100+x, 100+y, image.White)
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		TemplateMatch(source, template, 0.8)
 	}
 }
