@@ -481,9 +481,16 @@ func TestRealGameScreenshots(t *testing.T) {
 		t.Skip("No templates loaded, skipping real screenshot test")
 	}
 
-	// Enable template matching with auto strategy
-	detector.EnableTemplateMatching(true)
-	detector.SetDetectionStrategy(StrategyAuto)
+	// Enable OCR if available, otherwise use template matching
+	if OCRAvailable {
+		t.Logf("📝 OCR support detected - enabling OCR detection")
+		detector.EnableOCR(true)
+		detector.SetDetectionStrategy(StrategyOCR)
+	} else {
+		t.Logf("⚠️  OCR not available - using template matching only")
+		detector.EnableTemplateMatching(true)
+		detector.SetDetectionStrategy(StrategyAuto)
+	}
 
 	// Expected test cases
 	testCases := []struct {
