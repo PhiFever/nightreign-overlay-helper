@@ -117,11 +117,11 @@ func NewDayDetector(cfg *config.Config) *DayDetector {
 			IsDetected: false,
 		},
 		// Smart detection settings
-		searchRadius:         100,            // Search within 100px radius of last match
-		strategy:             StrategyAuto,   // Auto-select strategy
-		colorFilterThreshold: 0.1,            // 10% bright pixels indicates potential text
-		pyramidScales:        []float64{0.25, 0.5, 1.0}, // Multi-scale search
-		candidateStepSize:    50,             // Scan every 50px
+		searchRadius:         100,              // Search within 100px radius of last match
+		strategy:             StrategyAuto,     // Auto-select strategy
+		colorFilterThreshold: 0.1,              // 10% bright pixels indicates potential text
+		pyramidScales:        []float64{0.125}, // OPTIMIZED: Aggressive downsampling for speed (8x smaller)
+		candidateStepSize:    80,               // OPTIMIZED: Larger step size for faster scan
 		stats:                DetectionStats{},
 	}
 }
@@ -183,12 +183,25 @@ func (d *DayDetector) Initialize() error {
 
 // loadTemplates loads day number templates from the data directory
 func (d *DayDetector) loadTemplates() error {
-	// Get the data directory path
-	dataDir := "data/day_template"
+	// Get the data directory path, try multiple possible locations
+	possiblePaths := []string{
+		"data/day_template",         // When running from project root
+		"../../data/day_template",   // When running tests
+		"../data/day_template",      // Alternative location
+	}
 
-	// Check if directory exists
-	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
-		return fmt.Errorf("template directory not found: %s", dataDir)
+	var dataDir string
+	var found bool
+	for _, path := range possiblePaths {
+		if _, err := os.Stat(path); err == nil {
+			dataDir = path
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("template directory not found in any of: %v", possiblePaths)
 	}
 
 	// Languages to load
@@ -363,27 +376,27 @@ func (d *DayDetector) detectDayIntelligent(img image.Image, template *DayTemplat
 		}
 	}
 
-	// Layer 2: Color-based filtering (fast, narrows down search)
-	day, loc := d.detectWithColorFilter(img, template)
+	// Layer 2: Predefined hotspots (OPTIMIZED: screen center first - fast for typical DAY display)
+	day, loc := d.detectWithPredefined(img, template)
+	if day > 0 {
+		d.stats.LastStrategy = StrategyPredefined
+		d.stats.PredefinedCount++
+		return day, loc
+	}
+
+	// Layer 3: Color-based filtering (fast, narrows down search)
+	day, loc = d.detectWithColorFilter(img, template)
 	if day > 0 {
 		d.stats.LastStrategy = StrategyColorFilter
 		d.stats.ColorFilterCount++
 		return day, loc
 	}
 
-	// Layer 3: Image pyramid (medium speed, good coverage)
+	// Layer 4: Image pyramid (medium speed, good coverage)
 	day, loc = d.detectWithPyramid(img, template)
 	if day > 0 {
 		d.stats.LastStrategy = StrategyPyramid
 		d.stats.PyramidCount++
-		return day, loc
-	}
-
-	// Layer 4: Predefined hotspots (fast, common locations)
-	day, loc = d.detectWithPredefined(img, template)
-	if day > 0 {
-		d.stats.LastStrategy = StrategyPredefined
-		d.stats.PredefinedCount++
 		return day, loc
 	}
 
@@ -468,15 +481,16 @@ func (d *DayDetector) detectWithPredefined(img image.Image, template *DayTemplat
 	w, h := bounds.Dx(), bounds.Dy()
 
 	// Common UI locations based on typical game layouts
+	// OPTIMIZED: Screen center first (where DAY text typically appears)
 	predefinedRegions := []Rect{
-		// Top-left corner (most common for game info)
-		NewRect(int(float64(w)*0.02), int(float64(h)*0.02), int(float64(w)*0.20), int(float64(h)*0.15)),
-		// Top-right corner
-		NewRect(int(float64(w)*0.78), int(float64(h)*0.02), int(float64(w)*0.20), int(float64(h)*0.15)),
+		// Center region (highest priority for DAY display)
+		NewRect(int(float64(w)*0.35), int(float64(h)*0.35), int(float64(w)*0.30), int(float64(h)*0.30)),
+		// Wider center region (fallback if text is slightly off-center)
+		NewRect(int(float64(w)*0.25), int(float64(h)*0.25), int(float64(w)*0.50), int(float64(h)*0.50)),
 		// Top-center
 		NewRect(int(float64(w)*0.40), int(float64(h)*0.02), int(float64(w)*0.20), int(float64(h)*0.15)),
-		// Left-center
-		NewRect(int(float64(w)*0.02), int(float64(h)*0.40), int(float64(w)*0.20), int(float64(h)*0.20)),
+		// Top-left corner
+		NewRect(int(float64(w)*0.02), int(float64(h)*0.02), int(float64(w)*0.20), int(float64(h)*0.15)),
 	}
 
 	for _, region := range predefinedRegions {
@@ -503,6 +517,21 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 	// Crop to region
 	regionImg := CropImage(img, region)
 
+	// OPTIMIZATION: Downsample region for faster matching (aggressive 4x reduction)
+	regionBounds := regionImg.Bounds()
+	scale := 0.25 // 4x reduction in each dimension = 16x fewer pixels
+	scaledWidth := int(float64(regionBounds.Dx()) * scale)
+	scaledHeight := int(float64(regionBounds.Dy()) * scale)
+
+	if scaledWidth < 50 || scaledHeight < 50 {
+		// Region too small after scaling, use original
+		scale = 1.0
+		scaledWidth = regionBounds.Dx()
+		scaledHeight = regionBounds.Dy()
+	}
+
+	scaledRegion := ResizeImage(regionImg, scaledWidth, scaledHeight)
+
 	// Try each day template
 	templates := []image.Image{template.Day1, template.Day2, template.Day3}
 	bestDay := -1
@@ -510,14 +539,20 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 	var bestLocation *Point
 
 	for dayNum, tmpl := range templates {
-		result, err := TemplateMatch(regionImg, tmpl, d.matchThreshold)
+		// Scale template to match the downsampled region
+		tmplBounds := tmpl.Bounds()
+		scaledTmplWidth := int(float64(tmplBounds.Dx()) * scale)
+		scaledTmplHeight := int(float64(tmplBounds.Dy()) * scale)
+		scaledTmpl := ResizeImage(tmpl, scaledTmplWidth, scaledTmplHeight)
+
+		result, err := TemplateMatch(scaledRegion, scaledTmpl, d.matchThreshold)
 		if err == nil && result.Found && result.Similarity > bestSimilarity {
 			bestSimilarity = result.Similarity
 			bestDay = dayNum + 1
-			// Adjust location to account for region offset
+			// Adjust location: scale back up and account for region offset
 			bestLocation = &Point{
-				X: region.X + result.Location.X,
-				Y: region.Y + result.Location.Y,
+				X: region.X + int(float64(result.Location.X)/scale),
+				Y: region.Y + int(float64(result.Location.Y)/scale),
 			}
 		}
 	}
