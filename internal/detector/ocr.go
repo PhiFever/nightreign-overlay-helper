@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/png"
+	"io/ioutil"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -43,8 +46,21 @@ func OCRExtractDigits(img image.Image, language string) (*OCRResult, error) {
 	client.SetPageSegMode(gosseract.PSM_SINGLE_LINE)
 	client.SetWhitelist("0123456789DAYday ")
 
-	err := client.SetImage(inverted)
+	// Save image to temporary file for Tesseract
+	tmpfile, err := ioutil.TempFile("", "ocr-*.png")
 	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer os.Remove(tmpfile.Name())
+	defer tmpfile.Close()
+
+	// Encode image as PNG
+	if err := png.Encode(tmpfile, inverted); err != nil {
+		return nil, fmt.Errorf("failed to encode image: %w", err)
+	}
+
+	// Set image from file
+	if err := client.SetImage(tmpfile.Name()); err != nil {
 		return nil, fmt.Errorf("failed to set image: %w", err)
 	}
 
