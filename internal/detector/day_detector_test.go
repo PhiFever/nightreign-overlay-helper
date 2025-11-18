@@ -430,7 +430,7 @@ func TestIntelligentDetection(t *testing.T) {
 	// Enable template matching
 	detector.EnableTemplateMatching(true)
 
-	// Test different strategies
+	// Test different strategies with MOCK image
 	strategies := []DetectionStrategy{
 		StrategyAuto,
 		StrategyColorFilter,
@@ -438,15 +438,141 @@ func TestIntelligentDetection(t *testing.T) {
 		StrategyPredefined,
 	}
 
-	img := image.NewRGBA(image.Rect(0, 0, 1920, 1080))
+	// Note: Using mock image for quick strategy validation
+	mockImg := image.NewRGBA(image.Rect(0, 0, 1920, 1080))
 
 	for _, strategy := range strategies {
 		detector.SetDetectionStrategy(strategy)
-		result, err := detector.Detect(img)
+		result, err := detector.Detect(mockImg)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
 		t.Logf("Strategy %d detection completed", strategy)
+	}
+}
+
+// TestRealGameScreenshots tests detection with real game screenshots
+func TestRealGameScreenshots(t *testing.T) {
+	testDataDir := "../../data/test/day_detector"
+
+	// Check if test data directory exists
+	if _, err := os.Stat(testDataDir); os.IsNotExist(err) {
+		t.Skipf("Test data directory not found: %s (upload real game screenshots here)", testDataDir)
+	}
+
+	cfg := &config.Config{
+		DayPeriodSeconds: []int{270, 180, 210, 180},
+		UpdateInterval:   0.0,
+	}
+
+	detector := NewDayDetector(cfg)
+	require.NotNil(t, detector)
+
+	err := detector.Initialize()
+	require.NoError(t, err)
+	defer detector.Cleanup()
+
+	// Skip if no templates loaded
+	if len(detector.templates) == 0 {
+		t.Skip("No templates loaded, skipping real screenshot test")
+	}
+
+	// Enable template matching with auto strategy
+	detector.EnableTemplateMatching(true)
+	detector.SetDetectionStrategy(StrategyAuto)
+
+	// Expected test cases
+	testCases := []struct {
+		filename    string
+		expectedDay int
+		description string
+	}{
+		{"Day1.png", 1, "Game screenshot showing Day 1"},
+		{"Day2.png", 2, "Game screenshot showing Day 2"},
+		{"Day3.png", 3, "Game screenshot showing Day 3"},
+	}
+
+	successCount := 0
+	totalTests := 0
+
+	for _, tc := range testCases {
+		testPath := filepath.Join(testDataDir, tc.filename)
+
+		// Check if test file exists
+		if _, err := os.Stat(testPath); os.IsNotExist(err) {
+			t.Logf("⚠️  Test file not found: %s (skipping)", tc.filename)
+			continue
+		}
+
+		t.Run(tc.filename, func(t *testing.T) {
+			totalTests++
+
+			// Load real game screenshot
+			file, err := os.Open(testPath)
+			require.NoError(t, err, "Failed to open test image")
+			defer file.Close()
+
+			img, _, err := image.Decode(file)
+			require.NoError(t, err, "Failed to decode test image")
+			require.NotNil(t, img, "Decoded image should not be nil")
+
+			t.Logf("Loaded test image: %s (%dx%d)", tc.filename,
+				img.Bounds().Dx(), img.Bounds().Dy())
+
+			// Run detection
+			result, err := detector.Detect(img)
+			require.NoError(t, err, "Detection should not error")
+			require.NotNil(t, result, "Result should not be nil")
+
+			dayResult, ok := result.(*DayResult)
+			require.True(t, ok, "Result should be *DayResult")
+
+			// Get detection stats
+			stats := detector.GetDetectionStats()
+
+			// Log detection results
+			if dayResult.IsDetected {
+				t.Logf("✅ Detection successful!")
+				t.Logf("   Detected: Day %d", dayResult.Day)
+				t.Logf("   Expected: Day %d", tc.expectedDay)
+				t.Logf("   Strategy: %v", stats.LastStrategy)
+				t.Logf("   Time: %v", stats.LastDetectionTime)
+
+				// Verify result matches expected
+				assert.Equal(t, tc.expectedDay, dayResult.Day,
+					"Detected day should match expected day")
+
+				if dayResult.Day == tc.expectedDay {
+					successCount++
+				}
+			} else {
+				t.Logf("❌ Detection failed - Day not found")
+				t.Logf("   Expected: Day %d", tc.expectedDay)
+				t.Logf("   Time: %v", stats.LastDetectionTime)
+				t.Fail()
+			}
+		})
+	}
+
+	// Summary
+	if totalTests > 0 {
+		t.Logf("\n📊 Test Summary:")
+		t.Logf("   Success Rate: %d/%d (%.1f%%)",
+			successCount, totalTests, float64(successCount)/float64(totalTests)*100)
+
+		// Get final stats
+		stats := detector.GetDetectionStats()
+		t.Logf("\n📈 Detection Statistics:")
+		t.Logf("   Total Detections: %d", stats.TotalDetections)
+		t.Logf("   Cache Hits: %d", stats.CacheHitCount)
+		t.Logf("   Color Filter: %d", stats.ColorFilterCount)
+		t.Logf("   Pyramid Search: %d", stats.PyramidCount)
+		t.Logf("   Predefined Regions: %d", stats.PredefinedCount)
+		t.Logf("   Full Scans: %d", stats.FullScanCount)
+	} else {
+		t.Log("\n⚠️  No test images found. Please upload game screenshots to:")
+		t.Logf("   %s", testDataDir)
+		t.Log("   Expected filenames: Day1.png, Day2.png, Day3.png")
 	}
 }
 
@@ -506,7 +632,7 @@ func TestDetectionStats(t *testing.T) {
 
 // TestColorFiltering tests the color-based filtering function
 func TestColorFiltering(t *testing.T) {
-	// Create test image with some bright regions
+	// Create MOCK test image with some bright regions (synthetic data for algorithm validation)
 	img := image.NewRGBA(image.Rect(0, 0, 400, 300))
 
 	// Add a bright region (simulating text)
@@ -534,7 +660,7 @@ func TestColorFiltering(t *testing.T) {
 
 // TestPyramidSearch tests the image pyramid search function
 func TestPyramidSearch(t *testing.T) {
-	// Create test images
+	// Create MOCK test images (synthetic data for algorithm validation)
 	source := image.NewRGBA(image.Rect(0, 0, 800, 600))
 	template := image.NewRGBA(image.Rect(0, 0, 50, 50))
 
@@ -583,11 +709,12 @@ func BenchmarkIntelligentDetection(b *testing.B) {
 	}
 
 	detector.EnableTemplateMatching(true)
-	img := image.NewRGBA(image.Rect(0, 0, 1920, 1080))
+	// Note: Using mock image for performance benchmark
+	mockImg := image.NewRGBA(image.Rect(0, 0, 1920, 1080))
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		detector.Detect(img)
+		detector.Detect(mockImg)
 	}
 
 	// Log statistics
@@ -599,19 +726,20 @@ func BenchmarkIntelligentDetection(b *testing.B) {
 
 // BenchmarkColorFiltering benchmarks the color filtering function
 func BenchmarkColorFiltering(b *testing.B) {
-	img := image.NewRGBA(image.Rect(0, 0, 1920, 1080))
+	// Note: Using mock image for performance benchmark
+	mockImg := image.NewRGBA(image.Rect(0, 0, 1920, 1080))
 
-	// Add some bright regions
+	// Add some bright regions (simulating text)
 	for i := 0; i < 10; i++ {
 		for y := i * 100; y < i*100+50; y++ {
 			for x := i * 100; x < i*100+50; x++ {
-				img.Set(x, y, color.RGBA{R: 255, G: 255, B: 255, A: 255})
+				mockImg.Set(x, y, color.RGBA{R: 255, G: 255, B: 255, A: 255})
 			}
 		}
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		FindCandidateRegions(img, 200, 100, 50, 0.1)
+		FindCandidateRegions(mockImg, 200, 100, 50, 0.1)
 	}
 }
