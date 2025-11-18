@@ -3,6 +3,7 @@ package detector
 import (
 	"image"
 	"image/color"
+	_ "image/jpeg" // Import JPEG decoder
 	"image/png"
 	"os"
 	"path/filepath"
