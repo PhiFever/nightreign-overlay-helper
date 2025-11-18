@@ -376,3 +376,148 @@ func TemplateMatchMultiple(source image.Image, template image.Image, regions []R
 
 	return bestMatch, nil
 }
+
+// ColorRange represents a color range for filtering
+type ColorRange struct {
+	Lower [3]uint8 // RGB lower bounds
+	Upper [3]uint8 // RGB upper bounds
+}
+
+// HasBrightPixels checks if a region has enough bright/white pixels (for text detection)
+// Uses sampling to improve performance
+func HasBrightPixels(img image.Image, region Rect, threshold float64, sampleStep int) bool {
+	if sampleStep < 1 {
+		sampleStep = 1
+	}
+
+	brightCount := 0
+	totalSamples := 0
+
+	bounds := img.Bounds()
+	startX := max(region.X, bounds.Min.X)
+	startY := max(region.Y, bounds.Min.Y)
+	endX := min(region.X+region.Width, bounds.Max.X)
+	endY := min(region.Y+region.Height, bounds.Max.Y)
+
+	for y := startY; y < endY; y += sampleStep {
+		for x := startX; x < endX; x += sampleStep {
+			r, g, b, _ := img.At(x, y).RGBA()
+			// Convert to 8-bit
+			r8 := uint8(r >> 8)
+			g8 := uint8(g >> 8)
+			b8 := uint8(b >> 8)
+
+			// Check if pixel is bright (white or light colored)
+			if r8 > 200 && g8 > 200 && b8 > 200 {
+				brightCount++
+			}
+			totalSamples++
+		}
+	}
+
+	if totalSamples == 0 {
+		return false
+	}
+
+	ratio := float64(brightCount) / float64(totalSamples)
+	return ratio >= threshold
+}
+
+// FindCandidateRegions finds potential text regions using color-based filtering
+// This is much faster than template matching and can narrow down search areas
+func FindCandidateRegions(img image.Image, windowWidth, windowHeight, stepSize int, brightThreshold float64) []Rect {
+	candidates := []Rect{}
+	bounds := img.Bounds()
+
+	// Scan image with sliding window
+	for y := bounds.Min.Y; y < bounds.Max.Y-windowHeight; y += stepSize {
+		for x := bounds.Min.X; x < bounds.Max.X-windowWidth; x += stepSize {
+			region := NewRect(x, y, windowWidth, windowHeight)
+
+			// Quick color check with sampling
+			if HasBrightPixels(img, region, brightThreshold, 5) {
+				candidates = append(candidates, region)
+			}
+		}
+	}
+
+	return candidates
+}
+
+// TemplateMatchPyramid performs multi-scale template matching using image pyramid
+// This is faster than full-resolution matching for large images
+func TemplateMatchPyramid(source, template image.Image, threshold float64, scales []float64) (*MatchResult, error) {
+	if len(scales) == 0 {
+		scales = []float64{0.25, 0.5, 1.0} // Default scales
+	}
+
+	bestMatch := &MatchResult{
+		Similarity: 0.0,
+		Found:      false,
+	}
+
+	srcBounds := source.Bounds()
+	tmplBounds := template.Bounds()
+
+	for i, scale := range scales {
+		// Resize images according to scale
+		scaledSrcW := int(float64(srcBounds.Dx()) * scale)
+		scaledSrcH := int(float64(srcBounds.Dy()) * scale)
+		scaledTmplW := int(float64(tmplBounds.Dx()) * scale)
+		scaledTmplH := int(float64(tmplBounds.Dy()) * scale)
+
+		if scaledSrcW < scaledTmplW || scaledSrcH < scaledTmplH {
+			continue
+		}
+
+		scaledSrc := ResizeImage(source, scaledSrcW, scaledSrcH)
+		scaledTmpl := ResizeImage(template, scaledTmplW, scaledTmplH)
+
+		// For coarse scales, use lower threshold
+		adjustedThreshold := threshold
+		if i < len(scales)-1 {
+			adjustedThreshold = threshold * 0.85 // Lower threshold for coarse search
+		}
+
+		// Perform template matching at this scale
+		result, err := TemplateMatch(scaledSrc, scaledTmpl, adjustedThreshold)
+		if err != nil {
+			continue
+		}
+
+		if result.Found {
+			// Scale location back to original coordinates
+			result.Location.X = int(float64(result.Location.X) / scale)
+			result.Location.Y = int(float64(result.Location.Y) / scale)
+
+			if i == len(scales)-1 {
+				// Last scale (full resolution), return directly
+				return result, nil
+			}
+
+			// For coarse scales, refine the search in next iteration
+			// by focusing on the found region
+			if result.Similarity > bestMatch.Similarity {
+				bestMatch = result
+			}
+		}
+	}
+
+	return bestMatch, nil
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// max returns the maximum of two integers
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}

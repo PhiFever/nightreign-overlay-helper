@@ -40,13 +40,43 @@ type DayTemplate struct {
 	Day3     image.Image
 }
 
+// DetectionStrategy represents the detection strategy to use
+type DetectionStrategy int
+
+const (
+	// StrategyAuto automatically selects the best strategy
+	StrategyAuto DetectionStrategy = iota
+	// StrategyHotspotCache uses cached hotspot from previous detection
+	StrategyHotspotCache
+	// StrategyColorFilter uses color-based filtering to find candidates
+	StrategyColorFilter
+	// StrategyPyramid uses image pyramid for multi-scale search
+	StrategyPyramid
+	// StrategyPredefined searches in predefined common locations
+	StrategyPredefined
+	// StrategyFullScan performs full screen scan (slowest, most thorough)
+	StrategyFullScan
+)
+
+// DetectionStats tracks detection performance metrics
+type DetectionStats struct {
+	LastStrategy      DetectionStrategy
+	LastDetectionTime time.Duration
+	CacheHitCount     int
+	ColorFilterCount  int
+	PyramidCount      int
+	PredefinedCount   int
+	FullScanCount     int
+	TotalDetections   int
+}
+
 // DayDetector detects the current day and phase in the game
 type DayDetector struct {
 	*BaseDetector
 	config     *config.Config
 	lastResult *DayResult
 
-	// Detection regions
+	// Detection regions (legacy, for backward compatibility)
 	dayRegion Rect
 
 	// Template cache
@@ -56,25 +86,43 @@ type DayDetector struct {
 	currentLang string
 
 	// Configuration
-	updateInterval    time.Duration
-	lastUpdateTime    time.Time
-	matchThreshold    float64
+	updateInterval      time.Duration
+	lastUpdateTime      time.Time
+	matchThreshold      float64
 	enableTemplateMatch bool
+
+	// Smart detection
+	lastMatchLocation *Point            // Cached location from last successful match
+	searchRadius      int               // Radius for local search around cached location
+	strategy          DetectionStrategy // Current detection strategy
+	stats             DetectionStats    // Performance statistics
+
+	// Performance tuning
+	colorFilterThreshold float64 // Threshold for bright pixel ratio (0.0-1.0)
+	pyramidScales        []float64
+	candidateStepSize    int // Step size for candidate region scanning
 }
 
 // NewDayDetector creates a new day detector
 func NewDayDetector(cfg *config.Config) *DayDetector {
 	return &DayDetector{
-		BaseDetector:      NewBaseDetector("DayDetector"),
-		config:            cfg,
-		updateInterval:    time.Duration(cfg.UpdateInterval * float64(time.Second)),
-		templates:         make(map[string]*DayTemplate),
-		currentLang:       "chs", // Default to simplified Chinese
-		matchThreshold:    0.8,   // Default threshold
+		BaseDetector:        NewBaseDetector("DayDetector"),
+		config:              cfg,
+		updateInterval:      time.Duration(cfg.UpdateInterval * float64(time.Second)),
+		templates:           make(map[string]*DayTemplate),
+		currentLang:         "chs", // Default to simplified Chinese
+		matchThreshold:      0.8,   // Default threshold
 		enableTemplateMatch: false, // Disable by default (use mock mode)
 		lastResult: &DayResult{
 			IsDetected: false,
 		},
+		// Smart detection settings
+		searchRadius:         100,            // Search within 100px radius of last match
+		strategy:             StrategyAuto,   // Auto-select strategy
+		colorFilterThreshold: 0.1,            // 10% bright pixels indicates potential text
+		pyramidScales:        []float64{0.25, 0.5, 1.0}, // Multi-scale search
+		candidateStepSize:    50,             // Scan every 50px
+		stats:                DetectionStats{},
 	}
 }
 
@@ -91,6 +139,27 @@ func (d *DayDetector) EnableTemplateMatching(enable bool) {
 // SetMatchThreshold sets the similarity threshold for template matching
 func (d *DayDetector) SetMatchThreshold(threshold float64) {
 	d.matchThreshold = threshold
+}
+
+// SetDetectionStrategy sets the detection strategy
+func (d *DayDetector) SetDetectionStrategy(strategy DetectionStrategy) {
+	d.strategy = strategy
+}
+
+// GetDetectionStats returns the current detection statistics
+func (d *DayDetector) GetDetectionStats() DetectionStats {
+	return d.stats
+}
+
+// SetSearchRadius sets the search radius for hotspot cache
+func (d *DayDetector) SetSearchRadius(radius int) {
+	d.searchRadius = radius
+}
+
+// ResetCache clears the cached hotspot location
+func (d *DayDetector) ResetCache() {
+	d.lastMatchLocation = nil
+	logger.Debugf("[%s] Hotspot cache reset", d.Name())
 }
 
 // Initialize initializes the day detector
@@ -234,7 +303,7 @@ func (d *DayDetector) GetLastResult() *DayResult {
 	return d.lastResult
 }
 
-// detectDay detects the current day from the image
+// detectDay detects the current day from the image using intelligent multi-layer search
 // Returns -1 if not detected
 func (d *DayDetector) detectDay(img image.Image) int {
 	// If template matching is disabled, use mock mode
@@ -249,44 +318,216 @@ func (d *DayDetector) detectDay(img image.Image) int {
 		return d.detectDayMock()
 	}
 
-	// Crop image to day detection region
-	dayImg := CropImage(img, d.dayRegion)
+	startTime := time.Now()
 
-	// Try to match each day template
+	// Use intelligent detection based on strategy
+	var day int
+	var location *Point
+
+	switch d.strategy {
+	case StrategyHotspotCache:
+		day, location = d.detectWithHotspotCache(img, template)
+	case StrategyColorFilter:
+		day, location = d.detectWithColorFilter(img, template)
+	case StrategyPyramid:
+		day, location = d.detectWithPyramid(img, template)
+	case StrategyPredefined:
+		day, location = d.detectWithPredefined(img, template)
+	case StrategyFullScan:
+		day, location = d.detectWithFullScan(img, template)
+	default: // StrategyAuto
+		day, location = d.detectDayIntelligent(img, template)
+	}
+
+	// Update statistics
+	d.stats.LastDetectionTime = time.Since(startTime)
+	d.stats.TotalDetections++
+
+	// Update cached location if found
+	if day > 0 && location != nil {
+		d.lastMatchLocation = location
+	}
+
+	return day
+}
+
+// detectDayIntelligent uses multi-layer intelligent detection (Auto strategy)
+func (d *DayDetector) detectDayIntelligent(img image.Image, template *DayTemplate) (int, *Point) {
+	// Layer 1: Hotspot cache (fastest, usually hits)
+	if d.lastMatchLocation != nil {
+		day, loc := d.detectWithHotspotCache(img, template)
+		if day > 0 {
+			d.stats.LastStrategy = StrategyHotspotCache
+			d.stats.CacheHitCount++
+			return day, loc
+		}
+	}
+
+	// Layer 2: Color-based filtering (fast, narrows down search)
+	day, loc := d.detectWithColorFilter(img, template)
+	if day > 0 {
+		d.stats.LastStrategy = StrategyColorFilter
+		d.stats.ColorFilterCount++
+		return day, loc
+	}
+
+	// Layer 3: Image pyramid (medium speed, good coverage)
+	day, loc = d.detectWithPyramid(img, template)
+	if day > 0 {
+		d.stats.LastStrategy = StrategyPyramid
+		d.stats.PyramidCount++
+		return day, loc
+	}
+
+	// Layer 4: Predefined hotspots (fast, common locations)
+	day, loc = d.detectWithPredefined(img, template)
+	if day > 0 {
+		d.stats.LastStrategy = StrategyPredefined
+		d.stats.PredefinedCount++
+		return day, loc
+	}
+
+	// Layer 5: Full scan (slowest, most thorough - last resort)
+	logger.Debugf("[%s] Falling back to full scan", d.Name())
+	day, loc = d.detectWithFullScan(img, template)
+	if day > 0 {
+		d.stats.LastStrategy = StrategyFullScan
+		d.stats.FullScanCount++
+	}
+
+	return day, loc
+}
+
+// detectWithHotspotCache searches near the last known location
+func (d *DayDetector) detectWithHotspotCache(img image.Image, template *DayTemplate) (int, *Point) {
+	if d.lastMatchLocation == nil {
+		return -1, nil
+	}
+
+	bounds := img.Bounds()
+	x := max(0, d.lastMatchLocation.X-d.searchRadius)
+	y := max(0, d.lastMatchLocation.Y-d.searchRadius)
+	w := min(d.searchRadius*2, bounds.Dx()-x)
+	h := min(d.searchRadius*2, bounds.Dy()-y)
+
+	region := NewRect(x, y, w, h)
+	day, loc := d.matchDayInRegion(img, template, region)
+
+	if day > 0 && loc != nil {
+		logger.Debugf("[%s] Cache hit! Found Day %d near cached location", d.Name(), day)
+		return day, loc
+	}
+
+	return -1, nil
+}
+
+// detectWithColorFilter uses color-based filtering to find candidate regions
+func (d *DayDetector) detectWithColorFilter(img image.Image, template *DayTemplate) (int, *Point) {
+	// Estimate search window size based on template
+	templateBounds := template.Day1.Bounds()
+	windowW := templateBounds.Dx() * 3
+	windowH := templateBounds.Dy() * 3
+
+	// Find candidate regions with bright pixels
+	candidates := FindCandidateRegions(img, windowW, windowH, d.candidateStepSize, d.colorFilterThreshold)
+
+	logger.Debugf("[%s] Color filter found %d candidate regions", d.Name(), len(candidates))
+
+	// Search in candidate regions
+	for _, region := range candidates {
+		day, loc := d.matchDayInRegion(img, template, region)
+		if day > 0 {
+			return day, loc
+		}
+	}
+
+	return -1, nil
+}
+
+// detectWithPyramid uses image pyramid for multi-scale search
+func (d *DayDetector) detectWithPyramid(img image.Image, template *DayTemplate) (int, *Point) {
+	// Try each day template with pyramid search
+	templates := []image.Image{template.Day1, template.Day2, template.Day3}
+
+	for dayNum, tmpl := range templates {
+		result, err := TemplateMatchPyramid(img, tmpl, d.matchThreshold, d.pyramidScales)
+		if err == nil && result.Found {
+			day := dayNum + 1
+			logger.Debugf("[%s] Pyramid found Day %d at (%d, %d) with similarity %.2f",
+				d.Name(), day, result.Location.X, result.Location.Y, result.Similarity)
+			return day, &result.Location
+		}
+	}
+
+	return -1, nil
+}
+
+// detectWithPredefined searches in predefined common UI locations
+func (d *DayDetector) detectWithPredefined(img image.Image, template *DayTemplate) (int, *Point) {
+	bounds := img.Bounds()
+	w, h := bounds.Dx(), bounds.Dy()
+
+	// Common UI locations based on typical game layouts
+	predefinedRegions := []Rect{
+		// Top-left corner (most common for game info)
+		NewRect(int(float64(w)*0.02), int(float64(h)*0.02), int(float64(w)*0.20), int(float64(h)*0.15)),
+		// Top-right corner
+		NewRect(int(float64(w)*0.78), int(float64(h)*0.02), int(float64(w)*0.20), int(float64(h)*0.15)),
+		// Top-center
+		NewRect(int(float64(w)*0.40), int(float64(h)*0.02), int(float64(w)*0.20), int(float64(h)*0.15)),
+		// Left-center
+		NewRect(int(float64(w)*0.02), int(float64(h)*0.40), int(float64(w)*0.20), int(float64(h)*0.20)),
+	}
+
+	for _, region := range predefinedRegions {
+		day, loc := d.matchDayInRegion(img, template, region)
+		if day > 0 {
+			logger.Debugf("[%s] Found in predefined region at (%d, %d)", d.Name(), loc.X, loc.Y)
+			return day, loc
+		}
+	}
+
+	return -1, nil
+}
+
+// detectWithFullScan performs full screen template matching (slowest)
+func (d *DayDetector) detectWithFullScan(img image.Image, template *DayTemplate) (int, *Point) {
+	bounds := img.Bounds()
+	fullRegion := NewRect(bounds.Min.X, bounds.Min.Y, bounds.Dx(), bounds.Dy())
+
+	return d.matchDayInRegion(img, template, fullRegion)
+}
+
+// matchDayInRegion tries to match day templates in a specific region
+func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, region Rect) (int, *Point) {
+	// Crop to region
+	regionImg := CropImage(img, region)
+
+	// Try each day template
+	templates := []image.Image{template.Day1, template.Day2, template.Day3}
 	bestDay := -1
 	bestSimilarity := 0.0
+	var bestLocation *Point
 
-	// Match Day 1
-	if result, err := TemplateMatch(dayImg, template.Day1, d.matchThreshold); err == nil && result.Found {
-		if result.Similarity > bestSimilarity {
+	for dayNum, tmpl := range templates {
+		result, err := TemplateMatch(regionImg, tmpl, d.matchThreshold)
+		if err == nil && result.Found && result.Similarity > bestSimilarity {
 			bestSimilarity = result.Similarity
-			bestDay = 1
-		}
-	}
-
-	// Match Day 2
-	if result, err := TemplateMatch(dayImg, template.Day2, d.matchThreshold); err == nil && result.Found {
-		if result.Similarity > bestSimilarity {
-			bestSimilarity = result.Similarity
-			bestDay = 2
-		}
-	}
-
-	// Match Day 3
-	if result, err := TemplateMatch(dayImg, template.Day3, d.matchThreshold); err == nil && result.Found {
-		if result.Similarity > bestSimilarity {
-			bestSimilarity = result.Similarity
-			bestDay = 3
+			bestDay = dayNum + 1
+			// Adjust location to account for region offset
+			bestLocation = &Point{
+				X: region.X + result.Location.X,
+				Y: region.Y + result.Location.Y,
+			}
 		}
 	}
 
 	if bestDay > 0 {
-		logger.Debugf("[%s] Detected day %d with similarity %.2f", d.Name(), bestDay, bestSimilarity)
-		return bestDay
+		logger.Debugf("[%s] Matched Day %d with similarity %.2f", d.Name(), bestDay, bestSimilarity)
+		return bestDay, bestLocation
 	}
 
-	// If no match found, return -1
-	return -1
+	return -1, nil
 }
 
 // detectDayMock provides mock day detection for testing

@@ -2,10 +2,12 @@ package detector
 
 import (
 	"image"
+	"image/color"
 	"image/png"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/PhiFever/nightreign-overlay-helper/internal/config"
 	"github.com/PhiFever/nightreign-overlay-helper/internal/logger"
@@ -403,5 +405,213 @@ func BenchmarkTemplateMatch(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		TemplateMatch(source, template, 0.8)
+	}
+}
+
+// TestIntelligentDetection tests the intelligent multi-layer detection system
+func TestIntelligentDetection(t *testing.T) {
+	cfg := &config.Config{
+		DayPeriodSeconds: []int{270, 180, 210, 180},
+		UpdateInterval:   0.0,
+	}
+
+	detector := NewDayDetector(cfg)
+	require.NotNil(t, detector)
+
+	err := detector.Initialize()
+	require.NoError(t, err)
+	defer detector.Cleanup()
+
+	// Skip if no templates loaded
+	if len(detector.templates) == 0 {
+		t.Skip("No templates loaded, skipping intelligent detection test")
+	}
+
+	// Enable template matching
+	detector.EnableTemplateMatching(true)
+
+	// Test different strategies
+	strategies := []DetectionStrategy{
+		StrategyAuto,
+		StrategyColorFilter,
+		StrategyPyramid,
+		StrategyPredefined,
+	}
+
+	img := image.NewRGBA(image.Rect(0, 0, 1920, 1080))
+
+	for _, strategy := range strategies {
+		detector.SetDetectionStrategy(strategy)
+		result, err := detector.Detect(img)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		t.Logf("Strategy %d detection completed", strategy)
+	}
+}
+
+// TestHotspotCache tests the hotspot caching mechanism
+func TestHotspotCache(t *testing.T) {
+	cfg := &config.Config{
+		DayPeriodSeconds: []int{270, 180, 210, 180},
+		UpdateInterval:   0.0,
+	}
+
+	detector := NewDayDetector(cfg)
+	require.NotNil(t, detector)
+
+	// Test cache reset
+	detector.ResetCache()
+	assert.Nil(t, detector.lastMatchLocation, "Cache should be nil after reset")
+
+	// Test setting search radius
+	detector.SetSearchRadius(150)
+	assert.Equal(t, 150, detector.searchRadius, "Search radius should be updated")
+}
+
+// TestDetectionStats tests performance statistics tracking
+func TestDetectionStats(t *testing.T) {
+	cfg := &config.Config{
+		DayPeriodSeconds: []int{270, 180, 210, 180},
+		UpdateInterval:   0.0,
+	}
+
+	detector := NewDayDetector(cfg)
+	require.NotNil(t, detector)
+
+	err := detector.Initialize()
+	require.NoError(t, err)
+	defer detector.Cleanup()
+
+	// Get initial stats
+	stats := detector.GetDetectionStats()
+	assert.Equal(t, 0, stats.TotalDetections, "Initial detection count should be 0")
+
+	// Enable template matching and run detection
+	if len(detector.templates) > 0 {
+		detector.EnableTemplateMatching(true)
+		img := image.NewRGBA(image.Rect(0, 0, 800, 600))
+
+		detector.Detect(img)
+
+		// Check stats updated
+		stats = detector.GetDetectionStats()
+		assert.Greater(t, stats.TotalDetections, 0, "Detection count should increase")
+		assert.Greater(t, stats.LastDetectionTime, time.Duration(0), "Detection time should be recorded")
+
+		t.Logf("Detection stats: Total=%d, LastTime=%v, Strategy=%d",
+			stats.TotalDetections, stats.LastDetectionTime, stats.LastStrategy)
+	}
+}
+
+// TestColorFiltering tests the color-based filtering function
+func TestColorFiltering(t *testing.T) {
+	// Create test image with some bright regions
+	img := image.NewRGBA(image.Rect(0, 0, 400, 300))
+
+	// Add a bright region (simulating text)
+	for y := 50; y < 100; y++ {
+		for x := 50; x < 150; x++ {
+			img.Set(x, y, color.RGBA{R: 255, G: 255, B: 255, A: 255})
+		}
+	}
+
+	// Test HasBrightPixels
+	brightRegion := NewRect(50, 50, 100, 50)
+	assert.True(t, HasBrightPixels(img, brightRegion, 0.8, 3),
+		"Region with bright pixels should be detected")
+
+	darkRegion := NewRect(200, 200, 100, 50)
+	assert.False(t, HasBrightPixels(img, darkRegion, 0.8, 3),
+		"Region without bright pixels should not be detected")
+
+	// Test FindCandidateRegions
+	candidates := FindCandidateRegions(img, 120, 60, 30, 0.1)
+	assert.Greater(t, len(candidates), 0, "Should find at least one candidate region")
+
+	t.Logf("Found %d candidate regions", len(candidates))
+}
+
+// TestPyramidSearch tests the image pyramid search function
+func TestPyramidSearch(t *testing.T) {
+	// Create test images
+	source := image.NewRGBA(image.Rect(0, 0, 800, 600))
+	template := image.NewRGBA(image.Rect(0, 0, 50, 50))
+
+	// Fill template with white
+	for y := 0; y < 50; y++ {
+		for x := 0; x < 50; x++ {
+			template.Set(x, y, color.RGBA{R: 255, G: 255, B: 255, A: 255})
+		}
+	}
+
+	// Place template in source at (200, 150)
+	for y := 0; y < 50; y++ {
+		for x := 0; x < 50; x++ {
+			source.Set(200+x, 150+y, color.RGBA{R: 255, G: 255, B: 255, A: 255})
+		}
+	}
+
+	// Test pyramid search
+	scales := []float64{0.25, 0.5, 1.0}
+	result, err := TemplateMatchPyramid(source, template, 0.9, scales)
+
+	require.NoError(t, err)
+	if result.Found {
+		t.Logf("Pyramid search found match at (%d, %d) with similarity %.4f",
+			result.Location.X, result.Location.Y, result.Similarity)
+
+		// Allow some tolerance due to scaling
+		assert.InDelta(t, 200, result.Location.X, 10, "X position should be close to 200")
+		assert.InDelta(t, 150, result.Location.Y, 10, "Y position should be close to 150")
+	}
+}
+
+// BenchmarkIntelligentDetection benchmarks the intelligent detection system
+func BenchmarkIntelligentDetection(b *testing.B) {
+	cfg := &config.Config{
+		DayPeriodSeconds: []int{270, 180, 210, 180},
+		UpdateInterval:   0.0,
+	}
+
+	detector := NewDayDetector(cfg)
+	detector.Initialize()
+	defer detector.Cleanup()
+
+	if len(detector.templates) == 0 {
+		b.Skip("No templates loaded")
+	}
+
+	detector.EnableTemplateMatching(true)
+	img := image.NewRGBA(image.Rect(0, 0, 1920, 1080))
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		detector.Detect(img)
+	}
+
+	// Log statistics
+	stats := detector.GetDetectionStats()
+	b.Logf("Stats: Cache=%d, Color=%d, Pyramid=%d, Predefined=%d, FullScan=%d",
+		stats.CacheHitCount, stats.ColorFilterCount, stats.PyramidCount,
+		stats.PredefinedCount, stats.FullScanCount)
+}
+
+// BenchmarkColorFiltering benchmarks the color filtering function
+func BenchmarkColorFiltering(b *testing.B) {
+	img := image.NewRGBA(image.Rect(0, 0, 1920, 1080))
+
+	// Add some bright regions
+	for i := 0; i < 10; i++ {
+		for y := i * 100; y < i*100+50; y++ {
+			for x := i * 100; x < i*100+50; x++ {
+				img.Set(x, y, color.RGBA{R: 255, G: 255, B: 255, A: 255})
+			}
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		FindCandidateRegions(img, 200, 100, 50, 0.1)
 	}
 }
