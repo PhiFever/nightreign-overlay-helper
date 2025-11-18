@@ -111,7 +111,7 @@ func NewDayDetector(cfg *config.Config) *DayDetector {
 		updateInterval:      time.Duration(cfg.UpdateInterval * float64(time.Second)),
 		templates:           make(map[string]*DayTemplate),
 		currentLang:         "chs", // Default to simplified Chinese
-		matchThreshold:      0.8,   // Default threshold
+		matchThreshold:      0.75,  // OPTIMIZED: Lower threshold but we select best match across all templates
 		enableTemplateMatch: false, // Disable by default (use mock mode)
 		lastResult: &DayResult{
 			IsDetected: false,
@@ -493,12 +493,24 @@ func (d *DayDetector) detectWithPredefined(img image.Image, template *DayTemplat
 		NewRect(int(float64(w)*0.02), int(float64(h)*0.02), int(float64(w)*0.20), int(float64(h)*0.15)),
 	}
 
+	// Try all regions and pick the best match across all
+	bestDay := -1
+	bestSimilarity := 0.0
+	var bestLocation *Point
+
 	for _, region := range predefinedRegions {
-		day, loc := d.matchDayInRegion(img, template, region)
-		if day > 0 {
-			logger.Debugf("[%s] Found in predefined region at (%d, %d)", d.Name(), loc.X, loc.Y)
-			return day, loc
+		day, loc, similarity := d.matchDayInRegionWithScore(img, template, region)
+		if day > 0 && similarity > bestSimilarity {
+			bestDay = day
+			bestSimilarity = similarity
+			bestLocation = loc
 		}
+	}
+
+	if bestDay > 0 {
+		logger.Debugf("[%s] Found Day %d in predefined region at (%d, %d) with similarity %.3f",
+			d.Name(), bestDay, bestLocation.X, bestLocation.Y, bestSimilarity)
+		return bestDay, bestLocation
 	}
 
 	return -1, nil
@@ -512,18 +524,18 @@ func (d *DayDetector) detectWithFullScan(img image.Image, template *DayTemplate)
 	return d.matchDayInRegion(img, template, fullRegion)
 }
 
-// matchDayInRegion tries to match day templates in a specific region
-func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, region Rect) (int, *Point) {
+// matchDayInRegionWithScore tries to match day templates and returns similarity score
+func (d *DayDetector) matchDayInRegionWithScore(img image.Image, template *DayTemplate, region Rect) (int, *Point, float64) {
 	// Crop to region
 	regionImg := CropImage(img, region)
 
-	// OPTIMIZATION: Downsample region for faster matching (aggressive 4x reduction)
+	// OPTIMIZATION: Moderate downsampling to preserve digit details (2x reduction)
 	regionBounds := regionImg.Bounds()
-	scale := 0.25 // 4x reduction in each dimension = 16x fewer pixels
+	scale := 0.5 // BALANCED: 2x reduction preserves details while improving speed
 	scaledWidth := int(float64(regionBounds.Dx()) * scale)
 	scaledHeight := int(float64(regionBounds.Dy()) * scale)
 
-	if scaledWidth < 50 || scaledHeight < 50 {
+	if scaledWidth < 80 || scaledHeight < 80 {
 		// Region too small after scaling, use original
 		scale = 1.0
 		scaledWidth = regionBounds.Dx()
@@ -536,6 +548,7 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 	templates := []image.Image{template.Day1, template.Day2, template.Day3}
 	bestDay := -1
 	bestSimilarity := 0.0
+	secondBestSimilarity := 0.0
 	var bestLocation *Point
 
 	for dayNum, tmpl := range templates {
@@ -545,24 +558,57 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 		scaledTmplHeight := int(float64(tmplBounds.Dy()) * scale)
 		scaledTmpl := ResizeImage(tmpl, scaledTmplWidth, scaledTmplHeight)
 
-		result, err := TemplateMatch(scaledRegion, scaledTmpl, d.matchThreshold)
-		if err == nil && result.Found && result.Similarity > bestSimilarity {
-			bestSimilarity = result.Similarity
-			bestDay = dayNum + 1
-			// Adjust location: scale back up and account for region offset
-			bestLocation = &Point{
-				X: region.X + int(float64(result.Location.X)/scale),
-				Y: region.Y + int(float64(result.Location.Y)/scale),
+		// OPTIMIZATION: Use stride=3 for balanced speed/accuracy
+		result, err := TemplateMatchWithStride(scaledRegion, scaledTmpl, d.matchThreshold, 3)
+		if err == nil {
+			logger.Debugf("[%s] Day %d template similarity: %.3f (threshold: %.3f, found: %v)",
+				d.Name(), dayNum+1, result.Similarity, d.matchThreshold, result.Found)
+
+			if result.Found {
+				if result.Similarity > bestSimilarity {
+					// Update second best before updating best
+					secondBestSimilarity = bestSimilarity
+					bestSimilarity = result.Similarity
+					bestDay = dayNum + 1
+					// Adjust location: scale back up and account for region offset
+					bestLocation = &Point{
+						X: region.X + int(float64(result.Location.X)/scale),
+						Y: region.Y + int(float64(result.Location.Y)/scale),
+					}
+				} else if result.Similarity > secondBestSimilarity {
+					// Track second best similarity
+					secondBestSimilarity = result.Similarity
+				}
 			}
 		}
 	}
 
+	// CONFIDENCE CHECK: If best and second-best are too close, match is unreliable
+	// This handles cases where templates have high similarity due to common background
+	const minConfidenceGap = 0.015 // BALANCED: 1.5% difference required
 	if bestDay > 0 {
-		logger.Debugf("[%s] Matched Day %d with similarity %.2f", d.Name(), bestDay, bestSimilarity)
-		return bestDay, bestLocation
+		confidenceGap := bestSimilarity - secondBestSimilarity
+		logger.Debugf("[%s] Best: Day %d (%.3f), Second: (%.3f), Gap: %.3f",
+			d.Name(), bestDay, bestSimilarity, secondBestSimilarity, confidenceGap)
+
+		if confidenceGap < minConfidenceGap {
+			logger.Warningf("[%s] Low confidence match (gap=%.3f < %.3f), rejecting",
+				d.Name(), confidenceGap, minConfidenceGap)
+			return -1, nil, 0.0
+		}
+
+		logger.Debugf("[%s] Matched Day %d with similarity %.3f (confidence gap: %.3f)",
+			d.Name(), bestDay, bestSimilarity, confidenceGap)
+		return bestDay, bestLocation, bestSimilarity
 	}
 
-	return -1, nil
+	return -1, nil, 0.0
+}
+
+// matchDayInRegion tries to match day templates in a specific region
+func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, region Rect) (int, *Point) {
+	day, loc, _ := d.matchDayInRegionWithScore(img, template, region)
+	return day, loc
 }
 
 // detectDayMock provides mock day detection for testing

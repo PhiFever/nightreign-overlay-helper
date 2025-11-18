@@ -277,6 +277,12 @@ type MatchResult struct {
 // TemplateMatch performs template matching on a source image
 // Returns the location and similarity of the best match
 func TemplateMatch(source, template image.Image, threshold float64) (*MatchResult, error) {
+	return TemplateMatchWithStride(source, template, threshold, 1)
+}
+
+// TemplateMatchWithStride performs template matching with configurable stride for speed
+// stride > 1 performs a coarse search first, then refines around the best match
+func TemplateMatchWithStride(source, template image.Image, threshold float64, stride int) (*MatchResult, error) {
 	// Convert images to grayscale
 	srcGray := RGB2Gray(source)
 	tmplGray := RGB2Gray(template)
@@ -298,9 +304,14 @@ func TemplateMatch(source, template image.Image, threshold float64) (*MatchResul
 		Found:      false,
 	}
 
-	// Slide the template across the source image
-	for y := 0; y <= srcHeight-tmplHeight; y++ {
-		for x := 0; x <= srcWidth-tmplWidth; x++ {
+	// OPTIMIZATION: Use stride for coarse search
+	if stride < 1 {
+		stride = 1
+	}
+
+	// Coarse search with stride
+	for y := 0; y <= srcHeight-tmplHeight; y += stride {
+		for x := 0; x <= srcWidth-tmplWidth; x += stride {
 			// Extract region of interest from source
 			roi := extractROI(srcGray, x, y, tmplWidth, tmplHeight)
 
@@ -314,6 +325,33 @@ func TemplateMatch(source, template image.Image, threshold float64) (*MatchResul
 			if similarity > bestMatch.Similarity {
 				bestMatch.Similarity = similarity
 				bestMatch.Location = Point{X: x, Y: y}
+			}
+		}
+	}
+
+	// If stride > 1 and we found a good candidate, refine search around it
+	if stride > 1 && bestMatch.Similarity > threshold*0.9 {
+		refineX := bestMatch.Location.X
+		refineY := bestMatch.Location.Y
+
+		// Search in a small region around the best match with stride=1
+		startX := max(0, refineX-stride)
+		startY := max(0, refineY-stride)
+		endX := min(srcWidth-tmplWidth, refineX+stride)
+		endY := min(srcHeight-tmplHeight, refineY+stride)
+
+		for y := startY; y <= endY; y++ {
+			for x := startX; x <= endX; x++ {
+				roi := extractROI(srcGray, x, y, tmplWidth, tmplHeight)
+				similarity, err := CalculateSimilarity(roi, tmplGray)
+				if err != nil {
+					continue
+				}
+
+				if similarity > bestMatch.Similarity {
+					bestMatch.Similarity = similarity
+					bestMatch.Location = Point{X: x, Y: y}
+				}
 			}
 		}
 	}

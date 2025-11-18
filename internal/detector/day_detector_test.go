@@ -18,8 +18,8 @@ import (
 
 // TestMain sets up the test environment
 func TestMain(m *testing.M) {
-	// Initialize logger with INFO level to avoid blocking
-	logger.Setup(logger.INFO)
+	// Initialize logger with DEBUG level for detailed output
+	logger.Setup(logger.DEBUG)
 
 	// Run tests
 	code := m.Run()
