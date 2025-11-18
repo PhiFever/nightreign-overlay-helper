@@ -493,8 +493,9 @@ func TestRealGameScreenshots(t *testing.T) {
 	}{
 		{"Day1_test1.jpg", 1, "Game screenshot showing Day 1"},
 		{"Day1_test2.jpg", 1, "Game screenshot showing Day 1"},
-		{"Day2.png", 2, "Game screenshot showing Day 2"},
-		{"Day3.png", 3, "Game screenshot showing Day 3"},
+		{"Day2_test1.jpg", 2, "Game screenshot showing Day 2"},
+		{"Day2_test2.jpg", 2, "Game screenshot showing Day 2"},
+		{"Day3_test1.jpg", 3, "Game screenshot showing Day 3"},
 	}
 
 	successCount := 0
