@@ -517,13 +517,14 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 	// Crop to region
 	regionImg := CropImage(img, region)
 
-	// OPTIMIZATION: Downsample region for faster matching (aggressive 4x reduction)
+	// OPTIMIZATION: Balanced downsampling to preserve Roman numeral details
+	// Use 0.35x scale: preserves enough detail to distinguish I/II/III while staying fast
 	regionBounds := regionImg.Bounds()
-	scale := 0.25 // 4x reduction in each dimension = 16x fewer pixels
+	scale := 0.35 // Balanced: 3x reduction preserves Roman numeral strokes
 	scaledWidth := int(float64(regionBounds.Dx()) * scale)
 	scaledHeight := int(float64(regionBounds.Dy()) * scale)
 
-	if scaledWidth < 50 || scaledHeight < 50 {
+	if scaledWidth < 70 || scaledHeight < 70 {
 		// Region too small after scaling, use original
 		scale = 1.0
 		scaledWidth = regionBounds.Dx()
@@ -546,13 +547,17 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 		scaledTmpl := ResizeImage(tmpl, scaledTmplWidth, scaledTmplHeight)
 
 		result, err := TemplateMatch(scaledRegion, scaledTmpl, d.matchThreshold)
-		if err == nil && result.Found && result.Similarity > bestSimilarity {
-			bestSimilarity = result.Similarity
-			bestDay = dayNum + 1
-			// Adjust location: scale back up and account for region offset
-			bestLocation = &Point{
-				X: region.X + int(float64(result.Location.X)/scale),
-				Y: region.Y + int(float64(result.Location.Y)/scale),
+		if err == nil && result.Found {
+			logger.Debugf("[%s] Day %d template: similarity=%.4f (threshold=%.2f)",
+				d.Name(), dayNum+1, result.Similarity, d.matchThreshold)
+			if result.Similarity > bestSimilarity {
+				bestSimilarity = result.Similarity
+				bestDay = dayNum + 1
+				// Adjust location: scale back up and account for region offset
+				bestLocation = &Point{
+					X: region.X + int(float64(result.Location.X)/scale),
+					Y: region.Y + int(float64(result.Location.Y)/scale),
+				}
 			}
 		}
 	}

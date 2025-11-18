@@ -484,6 +484,7 @@ func TestRealGameScreenshots(t *testing.T) {
 	// Enable template matching with auto strategy
 	detector.EnableTemplateMatching(true)
 	detector.SetDetectionStrategy(StrategyAuto)
+	detector.SetLanguage("eng") // Set to English for test screenshots
 
 	// Expected test cases
 	testCases := []struct {
