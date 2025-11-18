@@ -46,6 +46,8 @@ type DetectionStrategy int
 const (
 	// StrategyAuto automatically selects the best strategy
 	StrategyAuto DetectionStrategy = iota
+	// StrategyOCR uses OCR to extract day number from text
+	StrategyOCR
 	// StrategyHotspotCache uses cached hotspot from previous detection
 	StrategyHotspotCache
 	// StrategyColorFilter uses color-based filtering to find candidates
@@ -100,7 +102,8 @@ type DayDetector struct {
 	// Performance tuning
 	colorFilterThreshold float64 // Threshold for bright pixel ratio (0.0-1.0)
 	pyramidScales        []float64
-	candidateStepSize    int // Step size for candidate region scanning
+	candidateStepSize    int  // Step size for candidate region scanning
+	enableOCR            bool // Enable OCR-based detection (more reliable than template matching)
 }
 
 // NewDayDetector creates a new day detector
@@ -123,7 +126,13 @@ func NewDayDetector(cfg *config.Config) *DayDetector {
 		pyramidScales:        []float64{0.125}, // OPTIMIZED: Aggressive downsampling for speed (8x smaller)
 		candidateStepSize:    80,               // OPTIMIZED: Larger step size for faster scan
 		stats:                DetectionStats{},
+		enableOCR:            false, // Disable OCR by default (requires Tesseract installation)
 	}
+}
+
+// EnableOCR enables or disables OCR-based detection
+func (d *DayDetector) EnableOCR(enable bool) {
+	d.enableOCR = enable
 }
 
 // SetLanguage sets the current language for template matching
@@ -338,6 +347,8 @@ func (d *DayDetector) detectDay(img image.Image) int {
 	var location *Point
 
 	switch d.strategy {
+	case StrategyOCR:
+		day, location = d.detectWithOCR(img)
 	case StrategyHotspotCache:
 		day, location = d.detectWithHotspotCache(img, template)
 	case StrategyColorFilter:
@@ -366,6 +377,15 @@ func (d *DayDetector) detectDay(img image.Image) int {
 
 // detectDayIntelligent uses multi-layer intelligent detection (Auto strategy)
 func (d *DayDetector) detectDayIntelligent(img image.Image, template *DayTemplate) (int, *Point) {
+	// Layer 0: OCR (if enabled - most reliable but requires Tesseract)
+	if d.enableOCR {
+		day, loc := d.detectWithOCR(img)
+		if day > 0 {
+			d.stats.LastStrategy = StrategyOCR
+			return day, loc
+		}
+	}
+
 	// Layer 1: Hotspot cache (fastest, usually hits)
 	if d.lastMatchLocation != nil {
 		day, loc := d.detectWithHotspotCache(img, template)
@@ -409,6 +429,42 @@ func (d *DayDetector) detectDayIntelligent(img image.Image, template *DayTemplat
 	}
 
 	return day, loc
+}
+
+// detectWithOCR uses OCR to extract the day number from screen
+func (d *DayDetector) detectWithOCR(img image.Image) (int, *Point) {
+	bounds := img.Bounds()
+	w, h := bounds.Dx(), bounds.Dy()
+
+	// Define regions where "DAY X" text typically appears
+	ocrRegions := []Rect{
+		// Center region (most common for "DAY X" display)
+		NewRect(int(float64(w)*0.35), int(float64(h)*0.35), int(float64(w)*0.30), int(float64(h)*0.30)),
+		// Wider center region
+		NewRect(int(float64(w)*0.25), int(float64(h)*0.25), int(float64(w)*0.50), int(float64(h)*0.50)),
+		// Top-center
+		NewRect(int(float64(w)*0.30), int(float64(h)*0.05), int(float64(w)*0.40), int(float64(h)*0.20)),
+	}
+
+	// Try OCR on each region
+	for _, region := range ocrRegions {
+		// Crop to region
+		regionImg := CropImage(img, region)
+
+		// Try to extract day number using OCR
+		dayNum, err := OCRExtractDayNumber(regionImg)
+		if err == nil && dayNum >= 1 && dayNum <= 3 {
+			logger.Debugf("[%s] OCR found Day %d in region (%d, %d, %dx%d)",
+				d.Name(), dayNum, region.X, region.Y, region.Width, region.Height)
+			// Return center of the region as location
+			centerX := region.X + region.Width/2
+			centerY := region.Y + region.Height/2
+			return dayNum, &Point{X: centerX, Y: centerY}
+		}
+	}
+
+	logger.Debugf("[%s] OCR detection failed", d.Name())
+	return -1, nil
 }
 
 // detectWithHotspotCache searches near the last known location
