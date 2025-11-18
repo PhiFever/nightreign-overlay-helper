@@ -9,6 +9,8 @@ import (
 
 	"github.com/PhiFever/nightreign-overlay-helper/internal/config"
 	"github.com/PhiFever/nightreign-overlay-helper/internal/logger"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestMain sets up the test environment
@@ -41,31 +43,20 @@ func TestDayTemplateLoading(t *testing.T) {
 
 			// Try to load the template
 			file, err := os.Open(filename)
-			if err != nil {
-				t.Errorf("Failed to open template %s: %v", filename, err)
-				continue
-			}
+			require.NoError(t, err, "Failed to open template %s", filename)
 			defer file.Close()
 
 			// Decode PNG
 			img, err := png.Decode(file)
-			if err != nil {
-				t.Errorf("Failed to decode template %s: %v", filename, err)
-				continue
-			}
+			require.NoError(t, err, "Failed to decode template %s", filename)
+			require.NotNil(t, img, "Template %s decoded to nil image", filename)
 
-			// Verify image is not nil and has valid dimensions
-			if img == nil {
-				t.Errorf("Template %s decoded to nil image", filename)
-				continue
-			}
-
+			// Verify image has valid dimensions
 			bounds := img.Bounds()
-			if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
-				t.Errorf("Template %s has invalid dimensions: %dx%d", filename, bounds.Dx(), bounds.Dy())
-			}
+			assert.Greater(t, bounds.Dx(), 0, "Template %s has invalid width", filename)
+			assert.Greater(t, bounds.Dy(), 0, "Template %s has invalid height", filename)
 
-			t.Logf("Successfully loaded template %s: %dx%d", filename, bounds.Dx(), bounds.Dy())
+			t.Logf("✓ Loaded %s: %dx%d", filename, bounds.Dx(), bounds.Dy())
 		}
 	}
 }
@@ -80,26 +71,18 @@ func TestDayDetectorInitialization(t *testing.T) {
 
 	// Create detector
 	detector := NewDayDetector(cfg)
-	if detector == nil {
-		t.Fatal("NewDayDetector returned nil")
-	}
+	require.NotNil(t, detector, "NewDayDetector should not return nil")
 
 	// Test initialization
 	err := detector.Initialize()
-	if err != nil {
-		t.Fatalf("Initialize failed: %v", err)
-	}
+	require.NoError(t, err, "Initialize should succeed")
 
 	// Test that detector is enabled by default
-	if !detector.IsEnabled() {
-		t.Error("Detector should be enabled by default")
-	}
+	assert.True(t, detector.IsEnabled(), "Detector should be enabled by default")
 
 	// Test cleanup
 	err = detector.Cleanup()
-	if err != nil {
-		t.Fatalf("Cleanup failed: %v", err)
-	}
+	require.NoError(t, err, "Cleanup should succeed")
 }
 
 // TestDayDetectorDetect tests the detect method
@@ -112,14 +95,10 @@ func TestDayDetectorDetect(t *testing.T) {
 
 	// Create detector
 	detector := NewDayDetector(cfg)
-	if detector == nil {
-		t.Fatal("NewDayDetector returned nil")
-	}
+	require.NotNil(t, detector)
 
 	err := detector.Initialize()
-	if err != nil {
-		t.Fatalf("Initialize failed: %v", err)
-	}
+	require.NoError(t, err)
 	defer detector.Cleanup()
 
 	// Create a dummy image
@@ -127,35 +106,23 @@ func TestDayDetectorDetect(t *testing.T) {
 
 	// Run detection
 	result, err := detector.Detect(img)
-	if err != nil {
-		t.Fatalf("Detect failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Check result type
 	dayResult, ok := result.(*DayResult)
-	if !ok {
-		t.Fatalf("Result is not *DayResult, got %T", result)
-	}
-
-	// Verify result has valid data (even if mock)
-	if dayResult == nil {
-		t.Fatal("DayResult is nil")
-	}
+	require.True(t, ok, "Result should be *DayResult, got %T", result)
+	require.NotNil(t, dayResult)
 
 	t.Logf("Detection result: %s", dayResult.String())
 
-	// Test that subsequent calls respect rate limiting
+	// Test that subsequent calls work correctly
 	result2, err := detector.Detect(img)
-	if err != nil {
-		t.Fatalf("Second Detect failed: %v", err)
-	}
+	require.NoError(t, err)
 
 	dayResult2, ok := result2.(*DayResult)
-	if !ok {
-		t.Fatalf("Second result is not *DayResult")
-	}
+	require.True(t, ok, "Second result should be *DayResult")
+	require.NotNil(t, dayResult2)
 
-	// Since rate limiting is disabled, results might differ
 	t.Logf("Second detection result: %s", dayResult2.String())
 }
 
@@ -167,9 +134,7 @@ func TestDayDetectorCalculateTimes(t *testing.T) {
 	}
 
 	detector := NewDayDetector(cfg)
-	if detector == nil {
-		t.Fatal("NewDayDetector returned nil")
-	}
+	require.NotNil(t, detector)
 
 	// Test various day/phase combinations
 	testCases := []struct {
@@ -186,20 +151,16 @@ func TestDayDetectorCalculateTimes(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		elapsed, shrink, nextPhase := detector.calculateTimes(tc.day, tc.phase)
+		t.Run(tc.desc, func(t *testing.T) {
+			elapsed, shrink, nextPhase := detector.calculateTimes(tc.day, tc.phase)
 
-		// Verify all durations are non-negative
-		if elapsed < 0 {
-			t.Errorf("%s: elapsed time is negative: %v", tc.desc, elapsed)
-		}
-		if shrink < 0 {
-			t.Errorf("%s: shrink time is negative: %v", tc.desc, shrink)
-		}
-		if nextPhase < 0 {
-			t.Errorf("%s: next phase time is negative: %v", tc.desc, nextPhase)
-		}
+			// Verify all durations are non-negative
+			assert.GreaterOrEqual(t, elapsed.Seconds(), 0.0, "elapsed time should be non-negative")
+			assert.GreaterOrEqual(t, shrink.Seconds(), 0.0, "shrink time should be non-negative")
+			assert.GreaterOrEqual(t, nextPhase.Seconds(), 0.0, "next phase time should be non-negative")
 
-		t.Logf("%s: elapsed=%v, shrink=%v, nextPhase=%v", tc.desc, elapsed, shrink, nextPhase)
+			t.Logf("elapsed=%v, shrink=%v, nextPhase=%v", elapsed, shrink, nextPhase)
+		})
 	}
 }
 
@@ -211,26 +172,18 @@ func TestDayDetectorEnableDisable(t *testing.T) {
 	}
 
 	detector := NewDayDetector(cfg)
-	if detector == nil {
-		t.Fatal("NewDayDetector returned nil")
-	}
+	require.NotNil(t, detector)
 
 	// Initially enabled
-	if !detector.IsEnabled() {
-		t.Error("Detector should be enabled by default")
-	}
+	assert.True(t, detector.IsEnabled(), "Detector should be enabled by default")
 
 	// Disable
 	detector.SetEnabled(false)
-	if detector.IsEnabled() {
-		t.Error("Detector should be disabled after SetEnabled(false)")
-	}
+	assert.False(t, detector.IsEnabled(), "Detector should be disabled after SetEnabled(false)")
 
 	// Re-enable
 	detector.SetEnabled(true)
-	if !detector.IsEnabled() {
-		t.Error("Detector should be enabled after SetEnabled(true)")
-	}
+	assert.True(t, detector.IsEnabled(), "Detector should be enabled after SetEnabled(true)")
 }
 
 // BenchmarkDayDetectorDetect benchmarks the detection performance
