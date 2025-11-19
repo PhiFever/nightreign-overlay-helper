@@ -316,7 +316,7 @@ func (d *DayDetector) GetLastResult() *DayResult {
 	return d.lastResult
 }
 
-// detectDay 使用智能多层搜索从图像中检测当前天数
+// detectDay 使用固定比例从图像中检测当前天数
 // 如果未检测到则返回 -1
 func (d *DayDetector) detectDay(img image.Image) int {
 	// 如果禁用了模板匹配，则使用模拟模式
@@ -333,33 +333,15 @@ func (d *DayDetector) detectDay(img image.Image) int {
 
 	startTime := time.Now()
 
-	// 根据策略使用智能检测
-	var day int
-	var location *Point
-
-	switch d.strategy {
-	case StrategyHotspotCache:
-		day, location = d.detectWithHotspotCache(img, template)
-	case StrategyColorFilter:
-		day, location = d.detectWithColorFilter(img, template)
-	case StrategyPyramid:
-		day, location = d.detectWithPyramid(img, template)
-	case StrategyPredefined:
-		day, location = d.detectWithPredefined(img, template)
-	case StrategyFullScan:
-		day, location = d.detectWithFullScan(img, template)
-	default: // StrategyAuto
-		day, location = d.detectDayIntelligent(img, template)
-	}
+	// 使用固定比例提取方法 (不再需要智能策略)
+	bounds := img.Bounds()
+	fullRegion := NewRect(bounds.Min.X, bounds.Min.Y, bounds.Dx(), bounds.Dy())
+	day, _ := d.matchDayInRegion(img, template, fullRegion)
 
 	// 更新统计信息
 	d.stats.LastDetectionTime = time.Since(startTime)
 	d.stats.TotalDetections++
-
-	// 如果找到，则更新缓存位置
-	if day > 0 && location != nil {
-		d.lastMatchLocation = location
-	}
+	d.stats.PredefinedCount++ // 统计为预定义区域方法
 
 	return day
 }
@@ -514,124 +496,72 @@ func (d *DayDetector) detectWithFullScan(img image.Image, template *DayTemplate)
 
 // matchDayInRegion 尝试在特定区域匹配天数模板
 func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, region Rect) (int, *Point) {
-	// 新方法：使用垂直段计数来识别罗马数字
-	// 这对背景噪声和模板匹配问题免疫
+	// 新方法：直接按比例提取中央区域，无需模板匹配定位
+	// 优势：更快、更稳定、避免模板匹配的子串问题
 
 	// 裁剪到区域
 	regionImg := CropImage(img, region)
-
-	// 首先，使用第1天模板定位"DAY"文本（所有模板都有相同的"DAY"部分）
-	// 我们使用较低的阈值进行初始检测
 	regionBounds := regionImg.Bounds()
-	scale := 0.5 // 更好的细节保留
-	scaledWidth := int(float64(regionBounds.Dx()) * scale)
-	scaledHeight := int(float64(regionBounds.Dy()) * scale)
 
-	if scaledWidth < 100 || scaledHeight < 100 {
-		scale = 1.0
-		scaledWidth = regionBounds.Dx()
-		scaledHeight = regionBounds.Dy()
-	}
+	// 直接提取屏幕中央 1/3 区域 (横向33%-67%, 纵向33%-67%)
+	// 确保这个区域正好包含 "DAY" 文本
+	centerStartX := int(float64(regionBounds.Dx()) / 3.0)
+	centerStartY := int(float64(regionBounds.Dy()) / 3.0)
+	centerWidth := int(float64(regionBounds.Dx()) / 3.0)
+	centerHeight := int(float64(regionBounds.Dy()) / 3.0)
 
-	scaledRegion := ResizeImage(regionImg, scaledWidth, scaledHeight)
-
-	// 使用第1天模板定位"DAY"文本
-	day1Template := template.Day1
-	tmplBounds := day1Template.Bounds()
-	scaledTmplWidth := int(float64(tmplBounds.Dx()) * scale)
-	scaledTmplHeight := int(float64(tmplBounds.Dy()) * scale)
-	scaledTmpl := ResizeImage(day1Template, scaledTmplWidth, scaledTmplHeight)
-
-	// 较低的阈值用于初始"DAY"检测
-	result, err := TemplateMatch(scaledRegion, scaledTmpl, 0.7)
-	if err != nil || !result.Found {
-		logger.Debugf("[%s] No DAY text found in region", d.Name())
+	// 确保区域有效
+	if centerWidth <= 0 || centerHeight <= 0 {
+		logger.Warningf("[%s] Invalid center region dimensions", d.Name())
 		return -1, nil
 	}
 
-	logger.Infof("[%s] Found DAY text at (%d, %d) with similarity=%.4f",
-		d.Name(), result.Location.X, result.Location.Y, result.Similarity)
+	centerRegion := NewRect(centerStartX, centerStartY, centerWidth, centerHeight)
+	centerImg := CropImage(regionImg, centerRegion)
 
-	// 提取罗马数字区域（"DAY"之后的最右边部分）
-	// 将坐标缩放回原始区域大小
-	dayX := int(float64(result.Location.X) / scale)
-	dayY := int(float64(result.Location.Y) / scale)
+	logger.Debugf("[%s] Extracted center region: x=%d, y=%d, w=%d, h=%d (from region %dx%d)",
+		d.Name(), centerStartX, centerStartY, centerWidth, centerHeight,
+		regionBounds.Dx(), regionBounds.Dy())
 
-	// Phase 2 优化：动态提取罗马数字区域
-	// 使用二值化 + 垂直投影分析，而非固定比例
-	// 确保裁剪区域不越界
-	cropWidth := tmplBounds.Dx()
-	cropHeight := tmplBounds.Dy()
-	if dayX+cropWidth > regionBounds.Dx() {
-		cropWidth = regionBounds.Dx() - dayX
+	// 在中央区域中提取罗马数字区域
+	// 使用固定比例：罗马数字在中央区域的右侧部分
+	centerBounds := centerImg.Bounds()
+
+	// 使用固定比例提取罗马数字区域
+	// "DAY" 文本结构: "DAY" 占约 70%, 罗马数字占约 30% 在最右侧
+	// 参考旧实现的 75%-100% 提取策略
+	numeralStartX := int(float64(centerBounds.Dx()) * 0.70)
+	numeralWidth := int(float64(centerBounds.Dx()) * 0.30)  // 最右侧 30%
+	numeralStartY := int(float64(centerBounds.Dy()) * 0.30) // 垂直居中
+	numeralHeight := int(float64(centerBounds.Dy()) * 0.40)
+
+	// 确保区域有效
+	if numeralStartX < 0 {
+		numeralStartX = 0
 	}
-	if dayY+cropHeight > regionBounds.Dy() {
-		cropHeight = regionBounds.Dy() - dayY
+	if numeralStartX+numeralWidth > centerBounds.Dx() {
+		numeralWidth = centerBounds.Dx() - numeralStartX
+	}
+	if numeralStartY < 0 {
+		numeralStartY = 0
+	}
+	if numeralStartY+numeralHeight > centerBounds.Dy() {
+		numeralHeight = centerBounds.Dy() - numeralStartY
 	}
 
-	if cropWidth <= 0 || cropHeight <= 0 {
-		logger.Warningf("[%s] Invalid crop region, skipping detection", d.Name())
+	if numeralWidth <= 10 || numeralHeight <= 10 {
+		logger.Warningf("[%s] Numeral region too small (w=%d, h=%d), skipping detection",
+			d.Name(), numeralWidth, numeralHeight)
 		return -1, nil
 	}
 
-	matchedTemplateRegion := CropImage(regionImg, NewRect(dayX, dayY, cropWidth, cropHeight))
+	numeralRegion := NewRect(numeralStartX, numeralStartY, numeralWidth, numeralHeight)
 
-	relativeNumeralRegion := ExtractRomanNumeralRegionDynamic(matchedTemplateRegion, tmplBounds.Dx(), tmplBounds.Dy())
+	logger.Debugf("[%s] Numeral region (relative to center): x=%d, y=%d, w=%d, h=%d",
+		d.Name(), numeralRegion.X, numeralRegion.Y, numeralRegion.Width, numeralRegion.Height)
 
-	// 检查动态提取是否成功
-	if relativeNumeralRegion.Width == 0 {
-		logger.Warningf("[%s] Failed to extract numeral region dynamically, skipping detection", d.Name())
-		return -1, nil
-	}
-
-	// 转换为绝对坐标（相对于 regionImg）
-	numeralRegion := NewRect(
-		dayX+relativeNumeralRegion.X,
-		dayY+relativeNumeralRegion.Y,
-		relativeNumeralRegion.Width,
-		relativeNumeralRegion.Height,
-	)
-
-	logger.Debugf("[%s] Dynamic numeral region: x=%d, y=%d, w=%d, h=%d (template w=%d, h=%d)",
-		d.Name(), numeralRegion.X, numeralRegion.Y, numeralRegion.Width, numeralRegion.Height,
-		tmplBounds.Dx(), tmplBounds.Dy())
-
-	// 自动修正区域边界以确保在图像范围内
-	clippedRegion := numeralRegion
-
-	// 修正左边界
-	if clippedRegion.X < 0 {
-		clippedRegion.Width += clippedRegion.X
-		clippedRegion.X = 0
-	}
-
-	// 修正上边界
-	if clippedRegion.Y < 0 {
-		clippedRegion.Height += clippedRegion.Y
-		clippedRegion.Y = 0
-	}
-
-	// 修正右边界
-	if clippedRegion.X+clippedRegion.Width > regionBounds.Dx() {
-		clippedRegion.Width = regionBounds.Dx() - clippedRegion.X
-	}
-
-	// 修正下边界
-	if clippedRegion.Y+clippedRegion.Height > regionBounds.Dy() {
-		clippedRegion.Height = regionBounds.Dy() - clippedRegion.Y
-	}
-
-	// 检查修正后的区域是否仍然有效
-	if clippedRegion.Width <= 10 || clippedRegion.Height <= 10 {
-		logger.Warningf("[%s] Numeral region too small after clipping (w=%d, h=%d), skipping detection",
-			d.Name(), clippedRegion.Width, clippedRegion.Height)
-		return -1, nil
-	}
-
-	// 使用修正后的区域
-	numeralRegion = clippedRegion
-
-	numeralImg := CropImage(regionImg, numeralRegion)
+	// 从中央区域提取罗马数字图像
+	numeralImg := CropImage(centerImg, numeralRegion)
 
 	// 优先尝试 OCR（最快最准确）
 	logger.Infof("[%s] 🔍 OCR support compiled: %v", d.Name(), OCRAvailable)
@@ -642,8 +572,8 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 		if err == nil && dayNum >= 1 && dayNum <= 3 {
 			logger.Infof("[%s] ✅ OCR detection succeeded: Day %d", d.Name(), dayNum)
 			location := &Point{
-				X: region.X + dayX,
-				Y: region.Y + dayY,
+				X: region.X + centerStartX,
+				Y: region.Y + centerStartY,
 			}
 			return dayNum, location
 		}
@@ -670,10 +600,11 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 		return -1, nil
 	}
 
-	// 计算绝对位置
+	// 计算绝对位置 (相对于原始图像)
+	// region起点 + 中央区域起点
 	location := &Point{
-		X: region.X + dayX,
-		Y: region.Y + dayY,
+		X: region.X + centerStartX,
+		Y: region.Y + centerStartY,
 	}
 
 	logger.Infof("[%s] Segment-based detection: Day %d", d.Name(), day)
