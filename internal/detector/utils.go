@@ -836,9 +836,9 @@ func ExtractRomanNumeralRegionDynamic(matchedRegion image.Image, templateWidth, 
 	actualHeight := bounds.Dy()
 
 	// 简化策略：完全放弃动态检测，使用固定比例
-	// 罗马数字在"DAY"模板中的固定位置：水平 70%-95%，垂直居中
-	startX := int(float64(bounds.Dx()) * 0.70)
-	endX := int(float64(bounds.Dx()) * 0.95)
+	// 罗马数字在"DAY"模板中的固定位置：水平 75%-100%（向右移动），垂直居中
+	startX := int(float64(bounds.Dx()) * 0.75)
+	endX := bounds.Dx() // 100% - 直到最右端
 
 	// 确保有效宽度
 	if endX <= startX || (endX-startX) < 10 {
