@@ -90,74 +90,104 @@ func OCRExtractDigits(img image.Image, language string) (*OCRResult, error) {
 
 // OCRExtractDayNumber 从图像中提取天数（识别罗马数字 I/II/III）
 func OCRExtractDayNumber(img image.Image) (int, error) {
+	bounds := img.Bounds()
+
+	// 调试：保存原始图像
+	debugDir := "/tmp/ocr_debug"
+	os.MkdirAll(debugDir, 0755)
+
 	// 转换为灰度图
 	gray := RGB2Gray(img)
+
+	// 保存灰度图
+	if f, err := os.Create(fmt.Sprintf("%s/01_gray_%dx%d.png", debugDir, bounds.Dx(), bounds.Dy())); err == nil {
+		png.Encode(f, gray)
+		f.Close()
+	}
 
 	// 应用自适应阈值化
 	binary := AdaptiveThreshold(gray)
 
-	// 反转以获得更好的 OCR 效果（白色背景上的黑色文字）
-	inverted := InvertImage(binary)
-
-	// 初始化 Tesseract
-	client := gosseract.NewClient()
-	defer client.Close()
-
-	client.SetLanguage("eng")
-	client.SetPageSegMode(gosseract.PSM_SINGLE_LINE)
-	// 关键修复：识别罗马数字而不是阿拉伯数字
-	client.SetWhitelist("IVX ")
-
-	// 保存图像到临时文件供 Tesseract 使用
-	tmpfile, err := ioutil.TempFile("", "ocr-day-*.png")
-	if err != nil {
-		return -1, fmt.Errorf("failed to create temp file: %w", err)
-	}
-	defer os.Remove(tmpfile.Name())
-	defer tmpfile.Close()
-
-	// 将图像编码为 PNG
-	if err := png.Encode(tmpfile, inverted); err != nil {
-		return -1, fmt.Errorf("failed to encode image: %w", err)
+	// 保存二值图
+	if f, err := os.Create(fmt.Sprintf("%s/02_binary_%dx%d.png", debugDir, bounds.Dx(), bounds.Dy())); err == nil {
+		png.Encode(f, binary)
+		f.Close()
 	}
 
-	// 从文件设置图像
-	if err := client.SetImage(tmpfile.Name()); err != nil {
-		return -1, fmt.Errorf("failed to set image: %w", err)
+	// 尝试两种方式：不反转和反转
+	// 游戏中的罗马数字可能是黑底白字（不需要反转）
+	testImages := []struct {
+		name string
+		img  image.Image
+	}{
+		{"normal", binary},
+		{"inverted", InvertImage(binary)},
 	}
 
-	text, err := client.Text()
-	if err != nil {
-		return -1, fmt.Errorf("OCR failed: %w", err)
-	}
-
-	text = strings.TrimSpace(text)
-
-	// 识别罗马数字 I, II, III
-	// 简单策略：数 'I' 的个数
-	if text == "" {
-		return -1, fmt.Errorf("no text found (OCR returned empty)")
-	}
-
-	// 清理空格
-	text = strings.ReplaceAll(text, " ", "")
-
-	// 匹配罗马数字模式
-	switch text {
-	case "I":
-		return 1, nil
-	case "II":
-		return 2, nil
-	case "III":
-		return 3, nil
-	default:
-		// 尝试数 I 的个数作为 fallback
-		iCount := strings.Count(text, "I")
-		if iCount >= 1 && iCount <= 3 {
-			return iCount, nil
+	for _, testImg := range testImages {
+		// 保存测试图像
+		if f, err := os.Create(fmt.Sprintf("%s/03_%s_%dx%d.png", debugDir, testImg.name, bounds.Dx(), bounds.Dy())); err == nil {
+			png.Encode(f, testImg.img)
+			f.Close()
 		}
-		return -1, fmt.Errorf("unrecognized roman numeral: '%s'", text)
+
+		// 初始化 Tesseract
+		client := gosseract.NewClient()
+
+		client.SetLanguage("eng")
+		client.SetPageSegMode(gosseract.PSM_SINGLE_WORD) // 单词模式更适合罗马数字
+		client.SetWhitelist("IVX ")
+
+		// 保存到临时文件
+		tmpfile, err := ioutil.TempFile("", "ocr-*.png")
+		if err != nil {
+			client.Close()
+			continue
+		}
+
+		png.Encode(tmpfile, testImg.img)
+		tmpfile.Close()
+
+		client.SetImage(tmpfile.Name())
+		text, err := client.Text()
+		os.Remove(tmpfile.Name())
+		client.Close()
+
+		if err != nil {
+			continue
+		}
+
+		text = strings.TrimSpace(text)
+		text = strings.ReplaceAll(text, " ", "")
+
+		fmt.Printf("[OCR Debug] %s mode: raw='%s'\n", testImg.name, text)
+
+		if text == "" {
+			continue
+		}
+
+		// 匹配罗马数字
+		switch text {
+		case "I":
+			fmt.Printf("[OCR Success] Recognized: I (Day 1)\n")
+			return 1, nil
+		case "II":
+			fmt.Printf("[OCR Success] Recognized: II (Day 2)\n")
+			return 2, nil
+		case "III":
+			fmt.Printf("[OCR Success] Recognized: III (Day 3)\n")
+			return 3, nil
+		default:
+			// Fallback: 数 I 的个数
+			iCount := strings.Count(text, "I")
+			if iCount >= 1 && iCount <= 3 {
+				fmt.Printf("[OCR Success] Counted %d I's (Day %d)\n", iCount, iCount)
+				return iCount, nil
+			}
+		}
 	}
+
+	return -1, fmt.Errorf("no text found (OCR returned empty), check /tmp/ocr_debug/ for debug images")
 }
 
 // Threshold 将灰度图转换为二值图
