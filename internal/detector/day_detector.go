@@ -570,13 +570,19 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 	}
 
 	if cropWidth <= 0 || cropHeight <= 0 {
-		logger.Warningf("[%s] Invalid crop region", d.Name())
-		return d.matchDayInRegionOld(img, template, region)
+		logger.Warningf("[%s] Invalid crop region, skipping detection", d.Name())
+		return -1, nil
 	}
 
 	matchedTemplateRegion := CropImage(regionImg, NewRect(dayX, dayY, cropWidth, cropHeight))
 
 	relativeNumeralRegion := ExtractRomanNumeralRegionDynamic(matchedTemplateRegion, tmplBounds.Dx(), tmplBounds.Dy())
+
+	// 检查动态提取是否成功
+	if relativeNumeralRegion.Width == 0 {
+		logger.Warningf("[%s] Failed to extract numeral region dynamically, skipping detection", d.Name())
+		return -1, nil
+	}
 
 	// 转换为绝对坐标（相对于 regionImg）
 	numeralRegion := NewRect(
@@ -617,9 +623,9 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 
 	// 检查修正后的区域是否仍然有效
 	if clippedRegion.Width <= 10 || clippedRegion.Height <= 10 {
-		logger.Warningf("[%s] Numeral region too small after clipping (w=%d, h=%d), falling back",
+		logger.Warningf("[%s] Numeral region too small after clipping (w=%d, h=%d), skipping detection",
 			d.Name(), clippedRegion.Width, clippedRegion.Height)
-		return d.matchDayInRegionOld(img, template, region)
+		return -1, nil
 	}
 
 	// 使用修正后的区域
@@ -641,8 +647,8 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 	case 3:
 		day = 3 // III
 	default:
-		logger.Warningf("[%s] Invalid segment count: %d, falling back to template matching", d.Name(), segments)
-		return d.matchDayInRegionOld(img, template, region)
+		logger.Warningf("[%s] Invalid segment count: %d, skipping detection", d.Name(), segments)
+		return -1, nil
 	}
 
 	// 计算绝对位置

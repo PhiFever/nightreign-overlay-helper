@@ -668,11 +668,11 @@ func CountVerticalSegments(img image.Image) int {
 	bars := 0
 	inBar := false
 
-	// 使用更激进的阈值：maxProjection 的 30%
+	// 使用固定 30% 阈值
 	// 提高阈值可以更好地区分密集竖线之间的间隙
 	barThreshold := int(float64(maxProjection) * 0.30)
 
-	// 备用阈值：至少是高度的 10%
+	// 最小阈值：至少是高度的 10%
 	minThreshold := height / 10
 	if barThreshold < minThreshold {
 		barThreshold = minThreshold
@@ -789,60 +789,49 @@ func FindRomanNumeralBoundary(projection []int, minGapWidth int) (startX, endX i
 		return -1, -1
 	}
 
-	// 阈值：低于这个值认为是间隙
-	gapThreshold := maxProjection / 4
-	// 阈值：高于这个值认为是文字
-	textThreshold := maxProjection / 3
+	// 策略：罗马数字通常在图像最右侧
+	// 从右向左扫描，找到包含罗马数字的整个区域
+	gapThreshold := maxProjection / 10 // 10%，更保守的阈值
 
-	// 状态机：寻找 "文字 → 间隙 → 文字" 模式
-	// "DAY" → 空格 → 罗马数字
-	inText := false
-	inGap := false
-	gapWidth := 0
-
-	for x := 0; x < len(projection); x++ {
-		p := projection[x]
-
-		if !inText && p >= textThreshold {
-			// 进入第一段文字 ("DAY")
-			inText = true
-			inGap = false
-		} else if inText && !inGap && p < gapThreshold {
-			// 从文字进入间隙
-			inGap = true
-			gapWidth = 1
-		} else if inGap && p < gapThreshold {
-			// 继续在间隙中
-			gapWidth++
-		} else if inGap && p >= textThreshold {
-			// 从间隙进入第二段文字（罗马数字）
-			if gapWidth >= minGapWidth {
-				// 找到了有效的间隙
-				startX = x
-
-				// 继续找到罗马数字的结束位置
-				for endX = x; endX < len(projection); endX++ {
-					if projection[endX] < gapThreshold {
-						break
-					}
-				}
-				return startX, endX
-			}
-			// 间隙太小，重置状态
-			inGap = false
-			inText = true
+	// 从右向左找到最右侧文字的位置
+	endX = -1
+	for x := len(projection) - 1; x >= 0; x-- {
+		if projection[x] > gapThreshold {
+			endX = x + 1
+			break
 		}
 	}
 
-	// 没找到明显的边界
-	return -1, -1
+	if endX < 0 {
+		return -1, -1
+	}
+
+	// 从 endX 向左扫描，允许小间隙，找到连续文字区域的起点
+	startX = 0
+	gapCount := 0
+	maxGapPixels := len(projection) / 20 // 最多允许 5% 宽度的间隙
+
+	for x := endX - 1; x >= 0; x-- {
+		if projection[x] <= gapThreshold {
+			gapCount++
+			if gapCount > maxGapPixels {
+				// 遇到大间隙，区域结束
+				startX = x + gapCount + 1
+				break
+			}
+		} else {
+			gapCount = 0
+		}
+	}
+
+	return startX, endX
 }
 
 // ExtractRomanNumeralRegionDynamic 动态提取罗马数字区域
 // 使用二值化和垂直投影分析，而非固定比例
+// 如果检测失败，返回 width=0 的 Rect
 func ExtractRomanNumeralRegionDynamic(matchedRegion image.Image, templateWidth, templateHeight int) Rect {
 	bounds := matchedRegion.Bounds()
-	actualWidth := bounds.Dx()
 	actualHeight := bounds.Dy()
 
 	// 1. 先做二值化处理，突出白色文字
@@ -860,27 +849,9 @@ func ExtractRomanNumeralRegionDynamic(matchedRegion image.Image, templateWidth, 
 
 	startX, endX := FindRomanNumeralBoundary(projection, minGapWidth)
 
-	// 4. 如果动态检测失败，回退到保守的固定比例
-	// 关键修复：使用实际区域宽度而非模板宽度
-	// 合理性检查：如果检测到的区域太小（< 模板宽度的 10%），认为检测失败
-	minReasonableWidth := templateWidth / 10
-	if startX < 0 || endX < 0 || startX >= endX || (endX-startX) < minReasonableWidth {
-		// 回退策略：罗马数字在"DAY"文本之后
-		// 使用65%-98%的水平位置，平衡覆盖范围和噪声
-		startX = int(float64(actualWidth) * 0.65)
-		endX = int(float64(actualWidth) * 0.98)
-		if endX <= startX {
-			endX = actualWidth
-		}
-	}
-
-	// 确保区域至少有最小宽度
-	minWidth := 20
-	if endX-startX < minWidth {
-		// 扩展到最小宽度
-		center := (startX + endX) / 2
-		startX = center - minWidth/2
-		endX = center + minWidth/2
+	// 4. 如果动态检测失败，直接返回失败（无 fallback）
+	if startX < 0 || endX < 0 || startX >= endX || (endX-startX) < 10 {
+		return NewRect(0, 0, 0, 0)
 	}
 
 	// 5. 垂直方向：使用实际高度，保持居中，留出上下边距
