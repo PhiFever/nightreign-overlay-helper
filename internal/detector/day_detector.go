@@ -514,18 +514,119 @@ func (d *DayDetector) detectWithFullScan(img image.Image, template *DayTemplate)
 
 // matchDayInRegion tries to match day templates in a specific region
 func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, region Rect) (int, *Point) {
+	// NEW APPROACH: Use vertical segment counting to identify Roman numerals
+	// This is immune to background noise and template matching issues
+
 	// Crop to region
 	regionImg := CropImage(img, region)
 
-	// OPTIMIZATION: Balanced downsampling to preserve Roman numeral details
-	// Use 0.35x scale: preserves enough detail to distinguish I/II/III while staying fast
+	// First, locate "DAY" text using Day 1 template (all templates have same "DAY" part)
+	// We use a lower threshold for initial detection
 	regionBounds := regionImg.Bounds()
-	scale := 0.35 // Balanced: 3x reduction preserves Roman numeral strokes
+	scale := 0.5 // Better detail preservation
+	scaledWidth := int(float64(regionBounds.Dx()) * scale)
+	scaledHeight := int(float64(regionBounds.Dy()) * scale)
+
+	if scaledWidth < 100 || scaledHeight < 100 {
+		scale = 1.0
+		scaledWidth = regionBounds.Dx()
+		scaledHeight = regionBounds.Dy()
+	}
+
+	scaledRegion := ResizeImage(regionImg, scaledWidth, scaledHeight)
+
+	// Use Day 1 template to locate "DAY" text
+	day1Template := template.Day1
+	tmplBounds := day1Template.Bounds()
+	scaledTmplWidth := int(float64(tmplBounds.Dx()) * scale)
+	scaledTmplHeight := int(float64(tmplBounds.Dy()) * scale)
+	scaledTmpl := ResizeImage(day1Template, scaledTmplWidth, scaledTmplHeight)
+
+	// Lower threshold for initial "DAY" detection
+	result, err := TemplateMatch(scaledRegion, scaledTmpl, 0.7)
+	if err != nil || !result.Found {
+		logger.Debugf("[%s] No DAY text found in region", d.Name())
+		return -1, nil
+	}
+
+	logger.Infof("[%s] Found DAY text at (%d, %d) with similarity=%.4f",
+		d.Name(), result.Location.X, result.Location.Y, result.Similarity)
+
+	// Extract the Roman numeral region (rightmost part after "DAY")
+	// Scale coordinates back to original region size
+	dayX := int(float64(result.Location.X) / scale)
+	dayY := int(float64(result.Location.Y) / scale)
+	dayWidth := int(float64(tmplBounds.Dx()))
+
+	// Extract Roman numeral area (adjust based on actual template dimensions)
+	// Roman numerals are positioned after "DAY " text
+	// Based on eng templates: full width is ~342px, "DAY " is ~200px, numerals are ~100px
+	numeralStartRatio := 0.55  // Start 55% into the template (after "DAY ")
+	numeralWidthRatio := 0.4   // Width is 40% of template (enough for "III")
+	numeralYOffsetRatio := 0.15 // Vertical offset 15% from top
+	numeralHeightRatio := 0.7   // Height is 70% of template height
+
+	numeralRegion := NewRect(
+		dayX+int(float64(dayWidth)*numeralStartRatio),
+		dayY+int(float64(tmplBounds.Dy())*numeralYOffsetRatio),
+		int(float64(dayWidth)*numeralWidthRatio),
+		int(float64(tmplBounds.Dy())*numeralHeightRatio),
+	)
+
+	logger.Debugf("[%s] Numeral region: x=%d, y=%d, w=%d, h=%d (template w=%d, h=%d)",
+		d.Name(), numeralRegion.X, numeralRegion.Y, numeralRegion.Width, numeralRegion.Height,
+		dayWidth, tmplBounds.Dy())
+
+	// Ensure region is within bounds
+	if numeralRegion.X < 0 || numeralRegion.Y < 0 ||
+		numeralRegion.X+numeralRegion.Width > regionBounds.Dx() ||
+		numeralRegion.Y+numeralRegion.Height > regionBounds.Dy() {
+		logger.Warningf("[%s] Numeral region out of bounds", d.Name())
+		// Fall back to template matching
+		return d.matchDayInRegionOld(img, template, region)
+	}
+
+	numeralImg := CropImage(regionImg, numeralRegion)
+
+	// Count vertical segments
+	segments := CountVerticalSegments(numeralImg)
+	logger.Infof("[%s] Detected %d vertical segments (Roman numeral)", d.Name(), segments)
+
+	// Map segments to day number
+	var day int
+	switch segments {
+	case 1:
+		day = 1 // I
+	case 2:
+		day = 2 // II
+	case 3:
+		day = 3 // III
+	default:
+		logger.Warningf("[%s] Invalid segment count: %d, falling back to template matching", d.Name(), segments)
+		return d.matchDayInRegionOld(img, template, region)
+	}
+
+	// Calculate absolute location
+	location := &Point{
+		X: region.X + dayX,
+		Y: region.Y + dayY,
+	}
+
+	logger.Infof("[%s] ✅ Segment-based detection: Day %d", d.Name(), day)
+	return day, location
+}
+
+// matchDayInRegionOld is the old template-matching based approach (fallback)
+func (d *DayDetector) matchDayInRegionOld(img image.Image, template *DayTemplate, region Rect) (int, *Point) {
+	// Crop to region
+	regionImg := CropImage(img, region)
+
+	regionBounds := regionImg.Bounds()
+	scale := 0.35
 	scaledWidth := int(float64(regionBounds.Dx()) * scale)
 	scaledHeight := int(float64(regionBounds.Dy()) * scale)
 
 	if scaledWidth < 70 || scaledHeight < 70 {
-		// Region too small after scaling, use original
 		scale = 1.0
 		scaledWidth = regionBounds.Dx()
 		scaledHeight = regionBounds.Dy()

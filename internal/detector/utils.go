@@ -624,3 +624,111 @@ func ThresholdImage(img *image.Gray, threshold uint8) *image.Gray {
 
 	return result
 }
+
+// CountVerticalSegments analyzes Roman numerals by counting vertical segments
+// This works because: I=1 segment, II=2 segments, III=3 segments
+// Returns the number of vertical segments found, or -1 if detection failed
+func CountVerticalSegments(img image.Image) int {
+	// Convert to grayscale
+	gray := RGB2Gray(img)
+
+	// Apply threshold to get binary image (white text on black background)
+	// Use a moderate threshold to catch white text
+	binary := ThresholdImage(gray, 160)
+
+	bounds := binary.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	if width == 0 || height == 0 {
+		return -1
+	}
+
+	// Calculate vertical projection (sum of white pixels in each column)
+	projection := make([]int, width)
+	maxProjection := 0
+	for x := 0; x < width; x++ {
+		sum := 0
+		for y := 0; y < height; y++ {
+			if binary.GrayAt(bounds.Min.X+x, bounds.Min.Y+y).Y > 128 {
+				sum++
+			}
+		}
+		projection[x] = sum
+		if sum > maxProjection {
+			maxProjection = sum
+		}
+	}
+
+	// Find peaks in the projection (each peak = one vertical line/segment)
+	// Use adaptive threshold based on maximum projection
+	// This handles varying image sizes and contrast levels
+	threshold := maxProjection / 3 // At least 1/3 of the max projection
+
+	if threshold < height/6 {
+		threshold = height / 6 // Fallback: at least 1/6 of height
+	}
+
+	// Peak detection: find local maxima in the projection
+	// Each Roman numeral vertical bar creates a peak in the projection
+	peaks := 0
+	peakThreshold := maxProjection / 2 // Peak must be at least half of max
+
+	for x := 1; x < width-1; x++ {
+		// Check if this is a local maximum
+		if projection[x] > projection[x-1] && projection[x] > projection[x+1] && projection[x] >= peakThreshold {
+			peaks++
+			// Skip nearby points to avoid counting same peak multiple times
+			x += 2
+		}
+	}
+
+	// If no peaks found, fall back to simple segment counting
+	if peaks == 0 {
+		inSegment := false
+		for x := 0; x < width; x++ {
+			if projection[x] >= threshold {
+				if !inSegment {
+					peaks++
+					inSegment = true
+				}
+			} else if projection[x] < threshold/2 {
+				// Require significant drop to end segment
+				inSegment = false
+			}
+		}
+	}
+
+	return peaks
+}
+
+// ExtractRomanNumeralRegion extracts the region likely containing Roman numerals
+// It looks for the rightmost part of the "DAY X" text where X is the Roman numeral
+func ExtractRomanNumeralRegion(img image.Image, fullWidth int) image.Image {
+	bounds := img.Bounds()
+
+	// Roman numerals are typically in the right 40% of the "DAY X" template
+	// and centered vertically
+	numeralX := int(float64(bounds.Dx()) * 0.6) // Start 60% into the image
+	numeralWidth := int(float64(bounds.Dx()) * 0.35)  // Width is ~35%
+	numeralY := int(float64(bounds.Dy()) * 0.2) // Start 20% from top
+	numeralHeight := int(float64(bounds.Dy()) * 0.6) // Height is ~60%
+
+	// Ensure we're within bounds
+	if numeralX < 0 {
+		numeralX = 0
+	}
+	if numeralX+numeralWidth > bounds.Dx() {
+		numeralWidth = bounds.Dx() - numeralX
+	}
+	if numeralY < 0 {
+		numeralY = 0
+	}
+	if numeralY+numeralHeight > bounds.Dy() {
+		numeralHeight = bounds.Dy() - numeralY
+	}
+
+	// Extract region
+	region := NewRect(numeralX, numeralY, numeralWidth, numeralHeight)
+	return CropImage(img, region)
+}
