@@ -558,6 +558,7 @@ func max(a, b int) int {
 	}
 	return b
 }
+
 // EdgeDetect 对灰度图像应用 Sobel 边缘检测
 // 这有助于消除背景噪声并专注于文本结构
 func EdgeDetect(img *image.Gray) *image.Gray {
@@ -716,9 +717,9 @@ func ExtractRomanNumeralRegion(img image.Image, fullWidth int) image.Image {
 
 	// 罗马数字通常位于"DAY X"模板的右侧 40%
 	// 并垂直居中
-	numeralX := int(float64(bounds.Dx()) * 0.6) // 从图像的 60% 开始
-	numeralWidth := int(float64(bounds.Dx()) * 0.35)  // 宽度约为 35%
-	numeralY := int(float64(bounds.Dy()) * 0.2) // 从顶部 20% 开始
+	numeralX := int(float64(bounds.Dx()) * 0.6)      // 从图像的 60% 开始
+	numeralWidth := int(float64(bounds.Dx()) * 0.35) // 宽度约为 35%
+	numeralY := int(float64(bounds.Dy()) * 0.2)      // 从顶部 20% 开始
 	numeralHeight := int(float64(bounds.Dy()) * 0.6) // 高度约为 60%
 
 	// 确保在边界内
@@ -840,12 +841,12 @@ func ExtractRomanNumeralRegionDynamic(matchedRegion image.Image, templateWidth, 
 	endX := int(float64(bounds.Dx()) * 0.95)
 
 	// 确保有效宽度
-	if endX <= startX || (endX - startX) < 10 {
+	if endX <= startX || (endX-startX) < 10 {
 		return NewRect(0, 0, 0, 0)
 	}
 
 	// 垂直方向：使用实际高度，保持居中，留出上下边距
-	startY := int(float64(actualHeight) * 0.15)
+	startY := int(float64(actualHeight) * 0.05)
 	height := int(float64(actualHeight) * 0.70)
 
 	return NewRect(startX, startY, endX-startX, height)

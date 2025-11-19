@@ -11,7 +11,6 @@ import (
 	"io/ioutil"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/otiai10/gosseract/v2"
