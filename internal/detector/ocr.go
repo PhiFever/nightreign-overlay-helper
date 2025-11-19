@@ -17,28 +17,28 @@ import (
 	"github.com/otiai10/gosseract/v2"
 )
 
-// OCRAvailable indicates if OCR support is compiled in
+// OCRAvailable 指示是否编译了 OCR 支持
 const OCRAvailable = true
 
-// OCRResult represents the result of OCR text recognition
+// OCRResult 表示 OCR 文本识别的结果
 type OCRResult struct {
-	Text       string  // Recognized text
-	Confidence float32 // Confidence score (0-100)
-	Found      bool    // Whether text was found
+	Text       string  // 识别的文本
+	Confidence float32 // 置信度分数（0-100）
+	Found      bool    // 是否找到文本
 }
 
-// OCRExtractDigits extracts digits from an image using Tesseract OCR
+// OCRExtractDigits 使用 Tesseract OCR 从图像中提取数字
 func OCRExtractDigits(img image.Image, language string) (*OCRResult, error) {
-	// Convert to grayscale
+	// 转换为灰度图
 	gray := RGB2Gray(img)
 
-	// Apply adaptive thresholding
+	// 应用自适应阈值化
 	binary := AdaptiveThreshold(gray)
 
-	// Invert for better OCR
+	// 反转以获得更好的 OCR 效果
 	inverted := InvertImage(binary)
 
-	// Initialize Tesseract
+	// 初始化 Tesseract
 	client := gosseract.NewClient()
 	defer client.Close()
 
@@ -46,7 +46,7 @@ func OCRExtractDigits(img image.Image, language string) (*OCRResult, error) {
 	client.SetPageSegMode(gosseract.PSM_SINGLE_LINE)
 	client.SetWhitelist("0123456789DAYday ")
 
-	// Save image to temporary file for Tesseract
+	// 保存图像到临时文件供 Tesseract 使用
 	tmpfile, err := ioutil.TempFile("", "ocr-*.png")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp file: %w", err)
@@ -54,12 +54,12 @@ func OCRExtractDigits(img image.Image, language string) (*OCRResult, error) {
 	defer os.Remove(tmpfile.Name())
 	defer tmpfile.Close()
 
-	// Encode image as PNG
+	// 将图像编码为 PNG
 	if err := png.Encode(tmpfile, inverted); err != nil {
 		return nil, fmt.Errorf("failed to encode image: %w", err)
 	}
 
-	// Set image from file
+	// 从文件设置图像
 	if err := client.SetImage(tmpfile.Name()); err != nil {
 		return nil, fmt.Errorf("failed to set image: %w", err)
 	}
@@ -88,7 +88,7 @@ func OCRExtractDigits(img image.Image, language string) (*OCRResult, error) {
 	return result, nil
 }
 
-// OCRExtractDayNumber extracts day number from image
+// OCRExtractDayNumber 从图像中提取天数
 func OCRExtractDayNumber(img image.Image) (int, error) {
 	result, err := OCRExtractDigits(img, "eng")
 	if err != nil {
@@ -118,7 +118,7 @@ func OCRExtractDayNumber(img image.Image) (int, error) {
 	return dayNum, nil
 }
 
-// Threshold converts grayscale to binary
+// Threshold 将灰度图转换为二值图
 func Threshold(img *image.Gray, threshold uint8) *image.Gray {
 	bounds := img.Bounds()
 	binary := image.NewGray(bounds)
@@ -137,7 +137,7 @@ func Threshold(img *image.Gray, threshold uint8) *image.Gray {
 	return binary
 }
 
-// AdaptiveThreshold performs Otsu's method thresholding
+// AdaptiveThreshold 执行 Otsu 方法阈值化
 func AdaptiveThreshold(img *image.Gray) *image.Gray {
 	histogram := make([]int, 256)
 	bounds := img.Bounds()
@@ -185,7 +185,7 @@ func AdaptiveThreshold(img *image.Gray) *image.Gray {
 	return Threshold(img, threshold)
 }
 
-// InvertImage inverts grayscale image
+// InvertImage 反转灰度图像
 func InvertImage(img *image.Gray) *image.Gray {
 	bounds := img.Bounds()
 	inverted := image.NewGray(bounds)

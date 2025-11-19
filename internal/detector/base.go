@@ -5,36 +5,36 @@ import (
 	"sync"
 )
 
-// Detector is the base interface for all detectors
+// Detector 是所有检测器的基础接口
 type Detector interface {
-	// Name returns the name of the detector
+	// Name 返回检测器的名称
 	Name() string
 
-	// Detect performs detection on the given image
-	// Returns detection result and any error encountered
+	// Detect 对给定的图像执行检测
+	// 返回检测结果和遇到的任何错误
 	Detect(img image.Image) (interface{}, error)
 
-	// Initialize initializes the detector with necessary resources
+	// Initialize 使用必要的资源初始化检测器
 	Initialize() error
 
-	// Cleanup releases resources used by the detector
+	// Cleanup 释放检测器使用的资源
 	Cleanup() error
 
-	// IsEnabled returns whether the detector is enabled
+	// IsEnabled 返回检测器是否启用
 	IsEnabled() bool
 
-	// SetEnabled sets the enabled state of the detector
+	// SetEnabled 设置检测器的启用状态
 	SetEnabled(enabled bool)
 }
 
-// BaseDetector provides common functionality for all detectors
+// BaseDetector 为所有检测器提供通用功能
 type BaseDetector struct {
 	name    string
 	enabled bool
 	mu      sync.RWMutex
 }
 
-// NewBaseDetector creates a new BaseDetector
+// NewBaseDetector 创建一个新的 BaseDetector
 func NewBaseDetector(name string) *BaseDetector {
 	return &BaseDetector{
 		name:    name,
@@ -42,46 +42,46 @@ func NewBaseDetector(name string) *BaseDetector {
 	}
 }
 
-// Name returns the name of the detector
+// Name 返回检测器的名称
 func (b *BaseDetector) Name() string {
 	return b.name
 }
 
-// IsEnabled returns whether the detector is enabled
+// IsEnabled 返回检测器是否启用
 func (b *BaseDetector) IsEnabled() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.enabled
 }
 
-// SetEnabled sets the enabled state of the detector
+// SetEnabled 设置检测器的启用状态
 func (b *BaseDetector) SetEnabled(enabled bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.enabled = enabled
 }
 
-// DetectorRegistry manages all detectors
+// DetectorRegistry 管理所有检测器
 type DetectorRegistry struct {
 	detectors map[string]Detector
 	mu        sync.RWMutex
 }
 
-// NewDetectorRegistry creates a new detector registry
+// NewDetectorRegistry 创建一个新的检测器注册表
 func NewDetectorRegistry() *DetectorRegistry {
 	return &DetectorRegistry{
 		detectors: make(map[string]Detector),
 	}
 }
 
-// Register registers a detector
+// Register 注册一个检测器
 func (r *DetectorRegistry) Register(detector Detector) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.detectors[detector.Name()] = detector
 }
 
-// Get retrieves a detector by name
+// Get 根据名称检索检测器
 func (r *DetectorRegistry) Get(name string) (Detector, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -89,7 +89,7 @@ func (r *DetectorRegistry) Get(name string) (Detector, bool) {
 	return detector, ok
 }
 
-// GetAll returns all registered detectors
+// GetAll 返回所有已注册的检测器
 func (r *DetectorRegistry) GetAll() []Detector {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -101,7 +101,7 @@ func (r *DetectorRegistry) GetAll() []Detector {
 	return detectors
 }
 
-// InitializeAll initializes all registered detectors
+// InitializeAll 初始化所有已注册的检测器
 func (r *DetectorRegistry) InitializeAll() error {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -114,7 +114,7 @@ func (r *DetectorRegistry) InitializeAll() error {
 	return nil
 }
 
-// CleanupAll cleans up all registered detectors
+// CleanupAll 清理所有已注册的检测器
 func (r *DetectorRegistry) CleanupAll() error {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

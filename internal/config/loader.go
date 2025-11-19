@@ -6,7 +6,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Load loads configuration from a YAML file
+// Load 从 YAML 文件加载配置
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -21,14 +21,14 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// Save saves configuration to a YAML file
+// Save 将配置保存到 YAML 文件
 func Save(path string, cfg *Config) error {
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return err
 	}
 
-	// Atomic write: write to temp file then rename
+	// 原子写入：写入临时文件然后重命名
 	tmpPath := path + ".tmp"
 	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
 		return err

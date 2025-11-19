@@ -7,40 +7,40 @@ import (
 	"math"
 )
 
-// Point represents a 2D point
+// Point 表示一个二维点
 type Point struct {
 	X, Y int
 }
 
-// Rect represents a rectangle
+// Rect 表示一个矩形
 type Rect struct {
 	X, Y, Width, Height int
 }
 
-// NewRect creates a new rectangle
+// NewRect 创建一个新的矩形
 func NewRect(x, y, width, height int) Rect {
 	return Rect{X: x, Y: y, Width: width, Height: height}
 }
 
-// Contains checks if a point is inside the rectangle
+// Contains 检查点是否在矩形内
 func (r Rect) Contains(p Point) bool {
 	return p.X >= r.X && p.X < r.X+r.Width &&
 		p.Y >= r.Y && p.Y < r.Y+r.Height
 }
 
-// ToImageRect converts to image.Rectangle
+// ToImageRect 转换为 image.Rectangle
 func (r Rect) ToImageRect() image.Rectangle {
 	return image.Rect(r.X, r.Y, r.X+r.Width, r.Y+r.Height)
 }
 
-// CropImage crops an image to the specified rectangle
+// CropImage 将图像裁剪到指定的矩形
 func CropImage(img image.Image, rect Rect) image.Image {
 	bounds := rect.ToImageRect()
 
-	// Create a new image with the cropped size
+	// 创建指定裁剪大小的新图像
 	cropped := image.NewRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
 
-	// Copy pixels
+	// 复制像素
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			if x >= img.Bounds().Min.X && x < img.Bounds().Max.X &&
@@ -53,8 +53,8 @@ func CropImage(img image.Image, rect Rect) image.Image {
 	return cropped
 }
 
-// ResizeImage resizes an image to the specified width and height
-// Uses nearest neighbor interpolation for simplicity
+// ResizeImage 将图像调整到指定的宽度和高度
+// 为简单起见使用最近邻插值
 func ResizeImage(img image.Image, width, height int) image.Image {
 	bounds := img.Bounds()
 	srcWidth := bounds.Dx()
@@ -64,11 +64,11 @@ func ResizeImage(img image.Image, width, height int) image.Image {
 
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
-			// Calculate source coordinates
+			// 计算源坐标
 			srcX := x * srcWidth / width
 			srcY := y * srcHeight / height
 
-			// Get color from source image
+			// 从源图像获取颜色
 			c := img.At(bounds.Min.X+srcX, bounds.Min.Y+srcY)
 			resized.Set(x, y, c)
 		}
@@ -77,7 +77,7 @@ func ResizeImage(img image.Image, width, height int) image.Image {
 	return resized
 }
 
-// RGB2Gray converts an RGB image to grayscale
+// RGB2Gray 将 RGB 图像转换为灰度图
 func RGB2Gray(img image.Image) *image.Gray {
 	bounds := img.Bounds()
 	gray := image.NewGray(bounds)
@@ -85,11 +85,11 @@ func RGB2Gray(img image.Image) *image.Gray {
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			r, g, b, _ := img.At(x, y).RGBA()
-			// Convert to 8-bit values
+			// 转换为 8 位值
 			r8 := uint8(r >> 8)
 			g8 := uint8(g >> 8)
 			b8 := uint8(b >> 8)
-			// Calculate grayscale using standard formula
+			// 使用标准公式计算灰度值
 			grayValue := uint8(0.299*float64(r8) + 0.587*float64(g8) + 0.114*float64(b8))
 			gray.SetGray(x, y, color.Gray{Y: grayValue})
 		}
@@ -98,7 +98,7 @@ func RGB2Gray(img image.Image) *image.Gray {
 	return gray
 }
 
-// RGB2HSV converts RGB color to HSV
+// RGB2HSV 将 RGB 颜色转换为 HSV
 func RGB2HSV(r, g, b uint8) (h, s, v float64) {
 	rf := float64(r) / 255.0
 	gf := float64(g) / 255.0
@@ -138,7 +138,7 @@ func RGB2HSV(r, g, b uint8) (h, s, v float64) {
 	return h, s, v
 }
 
-// RGB2HLS converts RGB color to HLS (Hue, Lightness, Saturation)
+// RGB2HLS 将 RGB 颜色转换为 HLS（色调、亮度、饱和度）
 func RGB2HLS(r, g, b uint8) (h, l, s float64) {
 	rf := float64(r) / 255.0
 	gf := float64(g) / 255.0
@@ -183,7 +183,7 @@ func RGB2HLS(r, g, b uint8) (h, l, s float64) {
 	return h, l, s
 }
 
-// CountNonZero counts non-zero pixels in a grayscale image
+// CountNonZero 计数灰度图像中的非零像素
 func CountNonZero(img *image.Gray) int {
 	count := 0
 	bounds := img.Bounds()
@@ -199,7 +199,7 @@ func CountNonZero(img *image.Gray) int {
 	return count
 }
 
-// InRange checks if a color is within the specified range
+// InRange 检查颜色是否在指定范围内
 func InRange(c color.Color, lower, upper [3]uint8) bool {
 	r, g, b, _ := c.RGBA()
 	r8 := uint8(r >> 8)
@@ -211,7 +211,7 @@ func InRange(c color.Color, lower, upper [3]uint8) bool {
 		b8 >= lower[2] && b8 <= upper[2]
 }
 
-// CreateMask creates a binary mask based on color range
+// CreateMask 基于颜色范围创建二值掩码
 func CreateMask(img image.Image, lower, upper [3]uint8) *image.Gray {
 	bounds := img.Bounds()
 	mask := image.NewGray(bounds)
@@ -230,8 +230,8 @@ func CreateMask(img image.Image, lower, upper [3]uint8) *image.Gray {
 	return mask
 }
 
-// CalculateSimilarity calculates similarity between two grayscale images
-// Returns a value between 0 and 1, where 1 means identical
+// CalculateSimilarity 计算两个灰度图像之间的相似度
+// 返回 0 到 1 之间的值，其中 1 表示完全相同
 func CalculateSimilarity(img1, img2 *image.Gray) (float64, error) {
 	bounds1 := img1.Bounds()
 	bounds2 := img2.Bounds()
@@ -256,34 +256,34 @@ func CalculateSimilarity(img1, img2 *image.Gray) (float64, error) {
 		}
 	}
 
-	// Calculate MSE (Mean Squared Error)
+	// 计算 MSE（均方误差）
 	mse := sumSquaredDiff / float64(totalPixels)
 
-	// Convert MSE to similarity score (0-1)
-	// Max MSE is 255^2 = 65025
+	// 将 MSE 转换为相似度分数（0-1）
+	// 最大 MSE 为 255^2 = 65025
 	maxMSE := 255.0 * 255.0
 	similarity := 1.0 - (mse / maxMSE)
 
 	return similarity, nil
 }
 
-// MatchResult represents the result of template matching
+// MatchResult 表示模板匹配的结果
 type MatchResult struct {
-	Location   Point   // Top-left corner of the match
-	Similarity float64 // Similarity score (0-1)
-	Found      bool    // Whether a match was found
+	Location   Point   // 匹配的左上角
+	Similarity float64 // 相似度分数（0-1）
+	Found      bool    // 是否找到匹配
 }
 
-// TemplateMatch performs template matching on a source image
-// Returns the location and similarity of the best match
+// TemplateMatch 对源图像执行模板匹配
+// 返回最佳匹配的位置和相似度
 func TemplateMatch(source, template image.Image, threshold float64) (*MatchResult, error) {
 	return TemplateMatchWithStride(source, template, threshold, 1)
 }
 
-// TemplateMatchWithStride performs template matching with configurable stride for speed
-// stride > 1 performs a coarse search first, then refines around the best match
+// TemplateMatchWithStride 执行具有可配置步长的模板匹配以提高速度
+// stride > 1 先执行粗略搜索，然后在最佳匹配周围细化
 func TemplateMatchWithStride(source, template image.Image, threshold float64, stride int) (*MatchResult, error) {
-	// Convert images to grayscale
+	// 将图像转换为灰度图
 	srcGray := RGB2Gray(source)
 	tmplGray := RGB2Gray(template)
 
@@ -304,24 +304,24 @@ func TemplateMatchWithStride(source, template image.Image, threshold float64, st
 		Found:      false,
 	}
 
-	// OPTIMIZATION: Use stride for coarse search
+	// 优化：使用步长进行粗略搜索
 	if stride < 1 {
 		stride = 1
 	}
 
-	// Coarse search with stride
+	// 使用步长进行粗略搜索
 	for y := 0; y <= srcHeight-tmplHeight; y += stride {
 		for x := 0; x <= srcWidth-tmplWidth; x += stride {
-			// Extract region of interest from source
+			// 从源图像中提取感兴趣区域
 			roi := extractROI(srcGray, x, y, tmplWidth, tmplHeight)
 
-			// Calculate similarity
+			// 计算相似度
 			similarity, err := CalculateSimilarity(roi, tmplGray)
 			if err != nil {
 				continue
 			}
 
-			// Update best match
+			// 更新最佳匹配
 			if similarity > bestMatch.Similarity {
 				bestMatch.Similarity = similarity
 				bestMatch.Location = Point{X: x, Y: y}
@@ -329,12 +329,12 @@ func TemplateMatchWithStride(source, template image.Image, threshold float64, st
 		}
 	}
 
-	// If stride > 1 and we found a good candidate, refine search around it
+	// 如果 stride > 1 且找到了一个好的候选，在其周围细化搜索
 	if stride > 1 && bestMatch.Similarity > threshold*0.9 {
 		refineX := bestMatch.Location.X
 		refineY := bestMatch.Location.Y
 
-		// Search in a small region around the best match with stride=1
+		// 在最佳匹配周围的小区域内使用 stride=1 搜索
 		startX := max(0, refineX-stride)
 		startY := max(0, refineY-stride)
 		endX := min(srcWidth-tmplWidth, refineX+stride)
@@ -356,7 +356,7 @@ func TemplateMatchWithStride(source, template image.Image, threshold float64, st
 		}
 	}
 
-	// Check if we found a match above threshold
+	// 检查是否找到高于阈值的匹配
 	if bestMatch.Similarity >= threshold {
 		bestMatch.Found = true
 	}
@@ -364,7 +364,7 @@ func TemplateMatchWithStride(source, template image.Image, threshold float64, st
 	return bestMatch, nil
 }
 
-// extractROI extracts a region of interest from a grayscale image
+// extractROI 从灰度图像中提取感兴趣区域
 func extractROI(img *image.Gray, x, y, width, height int) *image.Gray {
 	bounds := img.Bounds()
 	roi := image.NewGray(image.Rect(0, 0, width, height))
@@ -383,8 +383,8 @@ func extractROI(img *image.Gray, x, y, width, height int) *image.Gray {
 	return roi
 }
 
-// TemplateMatchMultiple matches a template against multiple source regions
-// Returns the best match across all regions
+// TemplateMatchMultiple 将模板与多个源区域进行匹配
+// 返回所有区域中的最佳匹配
 func TemplateMatchMultiple(source image.Image, template image.Image, regions []Rect, threshold float64) (*MatchResult, error) {
 	bestMatch := &MatchResult{
 		Similarity: 0.0,
@@ -392,16 +392,16 @@ func TemplateMatchMultiple(source image.Image, template image.Image, regions []R
 	}
 
 	for _, region := range regions {
-		// Crop source to region
+		// 将源裁剪到区域
 		cropped := CropImage(source, region)
 
-		// Perform template matching
+		// 执行模板匹配
 		result, err := TemplateMatch(cropped, template, threshold)
 		if err != nil {
 			continue
 		}
 
-		// Adjust location to account for region offset
+		// 调整位置以考虑区域偏移
 		if result.Found && result.Similarity > bestMatch.Similarity {
 			bestMatch.Similarity = result.Similarity
 			bestMatch.Location = Point{
@@ -415,14 +415,14 @@ func TemplateMatchMultiple(source image.Image, template image.Image, regions []R
 	return bestMatch, nil
 }
 
-// ColorRange represents a color range for filtering
+// ColorRange 表示用于过滤的颜色范围
 type ColorRange struct {
-	Lower [3]uint8 // RGB lower bounds
-	Upper [3]uint8 // RGB upper bounds
+	Lower [3]uint8 // RGB 下限
+	Upper [3]uint8 // RGB 上限
 }
 
-// HasBrightPixels checks if a region has enough bright/white pixels (for text detection)
-// Uses sampling to improve performance
+// HasBrightPixels 检查区域是否有足够的亮/白色像素（用于文本检测）
+// 使用采样来提高性能
 func HasBrightPixels(img image.Image, region Rect, threshold float64, sampleStep int) bool {
 	if sampleStep < 1 {
 		sampleStep = 1
@@ -440,12 +440,12 @@ func HasBrightPixels(img image.Image, region Rect, threshold float64, sampleStep
 	for y := startY; y < endY; y += sampleStep {
 		for x := startX; x < endX; x += sampleStep {
 			r, g, b, _ := img.At(x, y).RGBA()
-			// Convert to 8-bit
+			// 转换为 8 位
 			r8 := uint8(r >> 8)
 			g8 := uint8(g >> 8)
 			b8 := uint8(b >> 8)
 
-			// Check if pixel is bright (white or light colored)
+			// 检查像素是否明亮（白色或浅色）
 			if r8 > 200 && g8 > 200 && b8 > 200 {
 				brightCount++
 			}
@@ -461,18 +461,18 @@ func HasBrightPixels(img image.Image, region Rect, threshold float64, sampleStep
 	return ratio >= threshold
 }
 
-// FindCandidateRegions finds potential text regions using color-based filtering
-// This is much faster than template matching and can narrow down search areas
+// FindCandidateRegions 使用基于颜色的过滤查找潜在的文本区域
+// 这比模板匹配快得多，可以缩小搜索区域
 func FindCandidateRegions(img image.Image, windowWidth, windowHeight, stepSize int, brightThreshold float64) []Rect {
 	candidates := []Rect{}
 	bounds := img.Bounds()
 
-	// Scan image with sliding window
+	// 使用滑动窗口扫描图像
 	for y := bounds.Min.Y; y < bounds.Max.Y-windowHeight; y += stepSize {
 		for x := bounds.Min.X; x < bounds.Max.X-windowWidth; x += stepSize {
 			region := NewRect(x, y, windowWidth, windowHeight)
 
-			// Quick color check with sampling
+			// 使用采样进行快速颜色检查
 			if HasBrightPixels(img, region, brightThreshold, 5) {
 				candidates = append(candidates, region)
 			}
@@ -482,11 +482,11 @@ func FindCandidateRegions(img image.Image, windowWidth, windowHeight, stepSize i
 	return candidates
 }
 
-// TemplateMatchPyramid performs multi-scale template matching using image pyramid
-// This is faster than full-resolution matching for large images
+// TemplateMatchPyramid 使用图像金字塔执行多尺度模板匹配
+// 对于大图像，这比全分辨率匹配更快
 func TemplateMatchPyramid(source, template image.Image, threshold float64, scales []float64) (*MatchResult, error) {
 	if len(scales) == 0 {
-		scales = []float64{0.25, 0.5, 1.0} // Default scales
+		scales = []float64{0.25, 0.5, 1.0} // 默认尺度
 	}
 
 	bestMatch := &MatchResult{
@@ -498,7 +498,7 @@ func TemplateMatchPyramid(source, template image.Image, threshold float64, scale
 	tmplBounds := template.Bounds()
 
 	for i, scale := range scales {
-		// Resize images according to scale
+		// 根据尺度调整图像大小
 		scaledSrcW := int(float64(srcBounds.Dx()) * scale)
 		scaledSrcH := int(float64(srcBounds.Dy()) * scale)
 		scaledTmplW := int(float64(tmplBounds.Dx()) * scale)
@@ -511,30 +511,29 @@ func TemplateMatchPyramid(source, template image.Image, threshold float64, scale
 		scaledSrc := ResizeImage(source, scaledSrcW, scaledSrcH)
 		scaledTmpl := ResizeImage(template, scaledTmplW, scaledTmplH)
 
-		// For coarse scales, use lower threshold
+		// 对于粗略尺度，使用较低的阈值
 		adjustedThreshold := threshold
 		if i < len(scales)-1 {
-			adjustedThreshold = threshold * 0.85 // Lower threshold for coarse search
+			adjustedThreshold = threshold * 0.85 // 粗略搜索的较低阈值
 		}
 
-		// Perform template matching at this scale
+		// 在此尺度执行模板匹配
 		result, err := TemplateMatch(scaledSrc, scaledTmpl, adjustedThreshold)
 		if err != nil {
 			continue
 		}
 
 		if result.Found {
-			// Scale location back to original coordinates
+			// 将位置缩放回原始坐标
 			result.Location.X = int(float64(result.Location.X) / scale)
 			result.Location.Y = int(float64(result.Location.Y) / scale)
 
 			if i == len(scales)-1 {
-				// Last scale (full resolution), return directly
+				// 最后一个尺度（全分辨率），直接返回
 				return result, nil
 			}
 
-			// For coarse scales, refine the search in next iteration
-			// by focusing on the found region
+			// 对于粗略尺度，通过聚焦找到的区域在下一次迭代中细化搜索
 			if result.Similarity > bestMatch.Similarity {
 				bestMatch = result
 			}
@@ -544,7 +543,7 @@ func TemplateMatchPyramid(source, template image.Image, threshold float64, scale
 	return bestMatch, nil
 }
 
-// min returns the minimum of two integers
+// min 返回两个整数中的最小值
 func min(a, b int) int {
 	if a < b {
 		return a
@@ -552,22 +551,22 @@ func min(a, b int) int {
 	return b
 }
 
-// max returns the maximum of two integers
+// max 返回两个整数中的最大值
 func max(a, b int) int {
 	if a > b {
 		return a
 	}
 	return b
 }
-// EdgeDetect applies Sobel edge detection to a grayscale image
-// This helps eliminate background noise and focus on text structure
+// EdgeDetect 对灰度图像应用 Sobel 边缘检测
+// 这有助于消除背景噪声并专注于文本结构
 func EdgeDetect(img *image.Gray) *image.Gray {
 	bounds := img.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
 
 	edges := image.NewGray(bounds)
 
-	// Sobel kernels
+	// Sobel 核
 	gx := [3][3]int{
 		{-1, 0, 1},
 		{-2, 0, 2},
@@ -580,7 +579,7 @@ func EdgeDetect(img *image.Gray) *image.Gray {
 		{1, 2, 1},
 	}
 
-	// Apply Sobel operator
+	// 应用 Sobel 算子
 	for y := 1; y < height-1; y++ {
 		for x := 1; x < width-1; x++ {
 			var sumX, sumY int
@@ -593,7 +592,7 @@ func EdgeDetect(img *image.Gray) *image.Gray {
 				}
 			}
 
-			// Calculate gradient magnitude
+			// 计算梯度幅度
 			magnitude := math.Sqrt(float64(sumX*sumX + sumY*sumY))
 			if magnitude > 255 {
 				magnitude = 255
@@ -606,7 +605,7 @@ func EdgeDetect(img *image.Gray) *image.Gray {
 	return edges
 }
 
-// ThresholdImage applies binary thresholding to highlight strong edges
+// ThresholdImage 应用二值阈值化以突出显示强边缘
 func ThresholdImage(img *image.Gray, threshold uint8) *image.Gray {
 	bounds := img.Bounds()
 	result := image.NewGray(bounds)
@@ -625,15 +624,15 @@ func ThresholdImage(img *image.Gray, threshold uint8) *image.Gray {
 	return result
 }
 
-// CountVerticalSegments analyzes Roman numerals by counting vertical segments
-// This works because: I=1 segment, II=2 segments, III=3 segments
-// Returns the number of vertical segments found, or -1 if detection failed
+// CountVerticalSegments 通过计数垂直段来分析罗马数字
+// 这有效是因为：I=1段，II=2段，III=3段
+// 返回找到的垂直段数，如果检测失败则返回 -1
 func CountVerticalSegments(img image.Image) int {
-	// Convert to grayscale
+	// 转换为灰度图
 	gray := RGB2Gray(img)
 
-	// Apply threshold to get binary image (white text on black background)
-	// Use a moderate threshold to catch white text
+	// 应用阈值化得到二值图像（黑色背景上的白色文本）
+	// 使用适度的阈值来捕获白色文本
 	binary := ThresholdImage(gray, 160)
 
 	bounds := binary.Bounds()
@@ -644,7 +643,7 @@ func CountVerticalSegments(img image.Image) int {
 		return -1
 	}
 
-	// Calculate vertical projection (sum of white pixels in each column)
+	// 计算垂直投影（每列中白色像素的总和）
 	projection := make([]int, width)
 	maxProjection := 0
 	for x := 0; x < width; x++ {
@@ -660,30 +659,30 @@ func CountVerticalSegments(img image.Image) int {
 		}
 	}
 
-	// Find peaks in the projection (each peak = one vertical line/segment)
-	// Use adaptive threshold based on maximum projection
-	// This handles varying image sizes and contrast levels
-	threshold := maxProjection / 3 // At least 1/3 of the max projection
+	// 在投影中查找峰值（每个峰值 = 一条垂直线/段）
+	// 使用基于最大投影的自适应阈值
+	// 这可以处理不同的图像大小和对比度水平
+	threshold := maxProjection / 3 // 至少是最大投影的 1/3
 
 	if threshold < height/6 {
-		threshold = height / 6 // Fallback: at least 1/6 of height
+		threshold = height / 6 // 备用：至少是高度的 1/6
 	}
 
-	// Peak detection: find local maxima in the projection
-	// Each Roman numeral vertical bar creates a peak in the projection
+	// 峰值检测：在投影中查找局部最大值
+	// 每个罗马数字垂直条在投影中创建一个峰值
 	peaks := 0
-	peakThreshold := maxProjection / 2 // Peak must be at least half of max
+	peakThreshold := maxProjection / 2 // 峰值必须至少是最大值的一半
 
 	for x := 1; x < width-1; x++ {
-		// Check if this is a local maximum
+		// 检查这是否是局部最大值
 		if projection[x] > projection[x-1] && projection[x] > projection[x+1] && projection[x] >= peakThreshold {
 			peaks++
-			// Skip nearby points to avoid counting same peak multiple times
+			// 跳过附近的点以避免多次计数同一个峰值
 			x += 2
 		}
 	}
 
-	// If no peaks found, fall back to simple segment counting
+	// 如果没有找到峰值，回退到简单的段计数
 	if peaks == 0 {
 		inSegment := false
 		for x := 0; x < width; x++ {
@@ -693,7 +692,7 @@ func CountVerticalSegments(img image.Image) int {
 					inSegment = true
 				}
 			} else if projection[x] < threshold/2 {
-				// Require significant drop to end segment
+				// 需要显著下降才能结束段
 				inSegment = false
 			}
 		}
@@ -702,19 +701,19 @@ func CountVerticalSegments(img image.Image) int {
 	return peaks
 }
 
-// ExtractRomanNumeralRegion extracts the region likely containing Roman numerals
-// It looks for the rightmost part of the "DAY X" text where X is the Roman numeral
+// ExtractRomanNumeralRegion 提取可能包含罗马数字的区域
+// 它查找"DAY X"文本的最右边部分，其中 X 是罗马数字
 func ExtractRomanNumeralRegion(img image.Image, fullWidth int) image.Image {
 	bounds := img.Bounds()
 
-	// Roman numerals are typically in the right 40% of the "DAY X" template
-	// and centered vertically
-	numeralX := int(float64(bounds.Dx()) * 0.6) // Start 60% into the image
-	numeralWidth := int(float64(bounds.Dx()) * 0.35)  // Width is ~35%
-	numeralY := int(float64(bounds.Dy()) * 0.2) // Start 20% from top
-	numeralHeight := int(float64(bounds.Dy()) * 0.6) // Height is ~60%
+	// 罗马数字通常位于"DAY X"模板的右侧 40%
+	// 并垂直居中
+	numeralX := int(float64(bounds.Dx()) * 0.6) // 从图像的 60% 开始
+	numeralWidth := int(float64(bounds.Dx()) * 0.35)  // 宽度约为 35%
+	numeralY := int(float64(bounds.Dy()) * 0.2) // 从顶部 20% 开始
+	numeralHeight := int(float64(bounds.Dy()) * 0.6) // 高度约为 60%
 
-	// Ensure we're within bounds
+	// 确保在边界内
 	if numeralX < 0 {
 		numeralX = 0
 	}
@@ -728,7 +727,7 @@ func ExtractRomanNumeralRegion(img image.Image, fullWidth int) image.Image {
 		numeralHeight = bounds.Dy() - numeralY
 	}
 
-	// Extract region
+	// 提取区域
 	region := NewRect(numeralX, numeralY, numeralWidth, numeralHeight)
 	return CropImage(img, region)
 }

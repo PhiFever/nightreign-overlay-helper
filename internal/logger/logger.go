@@ -12,7 +12,7 @@ import (
 	"github.com/PhiFever/nightreign-overlay-helper/pkg/utils"
 )
 
-// Level represents log level
+// Level 表示日志级别
 type Level int
 
 const (
@@ -31,8 +31,8 @@ var levelNames = map[Level]string{
 	CRITICAL: "CRITICAL",
 }
 
-// Logger is the main logger structure
-type Logger struct {
+// Logger 是主日志记录器结构
+type Logger struct{
 	level   Level
 	writers []io.Writer
 	mu      sync.Mutex
@@ -43,7 +43,7 @@ var (
 	loggerMu     sync.Mutex
 )
 
-// Setup initializes the global logger with the specified level
+// Setup 使用指定的级别初始化全局日志记录器
 func Setup(level Level) (*Logger, error) {
 	loggerMu.Lock()
 	defer loggerMu.Unlock()
@@ -57,7 +57,7 @@ func Setup(level Level) (*Logger, error) {
 		writers: []io.Writer{os.Stdout},
 	}
 
-	// Create log directory
+	// 创建日志目录
 	logDir, err := utils.GetAppDataPath("logs")
 	if err != nil {
 		return nil, err
@@ -67,7 +67,7 @@ func Setup(level Level) (*Logger, error) {
 		return nil, err
 	}
 
-	// Create log file
+	// 创建日志文件
 	date := time.Now().Format("2006-01-02")
 	logFile := filepath.Join(filepath.Dir(logDir), "logs", date+".log")
 
@@ -86,7 +86,7 @@ func Setup(level Level) (*Logger, error) {
 	return logger, nil
 }
 
-// SetLevel sets the logging level
+// SetLevel 设置日志记录级别
 func SetLevel(level Level) {
 	loggerMu.Lock()
 	defer loggerMu.Unlock()
@@ -98,7 +98,7 @@ func SetLevel(level Level) {
 	}
 }
 
-// GetLogger returns the global logger
+// GetLogger 返回全局日志记录器
 func GetLogger() *Logger {
 	loggerMu.Lock()
 	defer loggerMu.Unlock()
@@ -110,7 +110,7 @@ func GetLogger() *Logger {
 	return globalLogger
 }
 
-// log writes a log message with the specified level
+// log 使用指定的级别写入日志消息
 func (l *Logger) log(level Level, msg string, includeTrace bool) {
 	if level < l.level {
 		return
@@ -137,62 +137,62 @@ func (l *Logger) log(level Level, msg string, includeTrace bool) {
 	}
 }
 
-// Debug logs a debug message
+// Debug 记录调试消息
 func Debug(msg string) {
 	GetLogger().log(DEBUG, msg, false)
 }
 
-// Debugf logs a formatted debug message
+// Debugf 记录格式化的调试消息
 func Debugf(format string, args ...interface{}) {
 	GetLogger().log(DEBUG, fmt.Sprintf(format, args...), false)
 }
 
-// Info logs an info message
+// Info 记录信息消息
 func Info(msg string) {
 	GetLogger().log(INFO, msg, false)
 }
 
-// Infof logs a formatted info message
+// Infof 记录格式化的信息消息
 func Infof(format string, args ...interface{}) {
 	GetLogger().log(INFO, fmt.Sprintf(format, args...), false)
 }
 
-// Warning logs a warning message
+// Warning 记录警告消息
 func Warning(msg string) {
 	GetLogger().log(WARNING, msg, false)
 }
 
-// Warningf logs a formatted warning message
+// Warningf 记录格式化的警告消息
 func Warningf(format string, args ...interface{}) {
 	GetLogger().log(WARNING, fmt.Sprintf(format, args...), false)
 }
 
-// Error logs an error message with stack trace
+// Error 记录带有堆栈跟踪的错误消息
 func Error(msg string) {
 	GetLogger().log(ERROR, msg, true)
 }
 
-// Errorf logs a formatted error message with stack trace
+// Errorf 记录格式化的带有堆栈跟踪的错误消息
 func Errorf(format string, args ...interface{}) {
 	GetLogger().log(ERROR, fmt.Sprintf(format, args...), true)
 }
 
-// ErrorNoTrace logs an error message without stack trace
+// ErrorNoTrace 记录不带堆栈跟踪的错误消息
 func ErrorNoTrace(msg string) {
 	GetLogger().log(ERROR, msg, false)
 }
 
-// Critical logs a critical message with stack trace
+// Critical 记录带有堆栈跟踪的严重消息
 func Critical(msg string) {
 	GetLogger().log(CRITICAL, msg, true)
 }
 
-// Criticalf logs a formatted critical message with stack trace
+// Criticalf 记录格式化的带有堆栈跟踪的严重消息
 func Criticalf(format string, args ...interface{}) {
 	GetLogger().log(CRITICAL, fmt.Sprintf(format, args...), true)
 }
 
-// getStackTrace returns the current stack trace
+// getStackTrace 返回当前的堆栈跟踪
 func getStackTrace() string {
 	buf := make([]byte, 4096)
 	n := runtime.Stack(buf, false)

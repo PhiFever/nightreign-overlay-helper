@@ -3,7 +3,7 @@ package detector
 import (
 	"fmt"
 	"image"
-	_ "image/png" // Import PNG decoder
+	_ "image/png" // 导入 PNG 解码器
 	"os"
 	"path/filepath"
 	"time"
@@ -12,18 +12,18 @@ import (
 	"github.com/PhiFever/nightreign-overlay-helper/internal/logger"
 )
 
-// DayResult represents the result of day detection
+// DayResult 表示天数检测的结果
 type DayResult struct {
-	Day          int           // Current day (0-based)
-	Phase        int           // Current phase within the day
-	ElapsedTime  time.Duration // Time elapsed since day start
-	ShrinkTime   time.Duration // Time until next shrink
-	NextPhaseIn  time.Duration // Time until next phase
-	IsDetected   bool          // Whether day was successfully detected
-	LastUpdateAt time.Time     // When this result was last updated
+	Day          int           // 当前天数（从0开始）
+	Phase        int           // 当前天内的阶段
+	ElapsedTime  time.Duration // 从当天开始经过的时间
+	ShrinkTime   time.Duration // 到下一次缩圈的时间
+	NextPhaseIn  time.Duration // 到下一阶段的时间
+	IsDetected   bool          // 是否成功检测到天数
+	LastUpdateAt time.Time     // 上次更新此结果的时间
 }
 
-// String returns a string representation of the result
+// String 返回结果的字符串表示
 func (r *DayResult) String() string {
 	if !r.IsDetected {
 		return "Day: Not Detected"
@@ -32,7 +32,7 @@ func (r *DayResult) String() string {
 		r.Day, r.Phase, r.ElapsedTime, r.ShrinkTime, r.NextPhaseIn)
 }
 
-// DayTemplate represents templates for a specific language
+// DayTemplate 表示特定语言的模板
 type DayTemplate struct {
 	Language string
 	Day1     image.Image
@@ -40,25 +40,25 @@ type DayTemplate struct {
 	Day3     image.Image
 }
 
-// DetectionStrategy represents the detection strategy to use
+// DetectionStrategy 表示要使用的检测策略
 type DetectionStrategy int
 
 const (
-	// StrategyAuto automatically selects the best strategy
+	// StrategyAuto 自动选择最佳策略
 	StrategyAuto DetectionStrategy = iota
-	// StrategyHotspotCache uses cached hotspot from previous detection
+	// StrategyHotspotCache 使用之前检测的缓存热点
 	StrategyHotspotCache
-	// StrategyColorFilter uses color-based filtering to find candidates
+	// StrategyColorFilter 使用基于颜色的过滤来查找候选区域
 	StrategyColorFilter
-	// StrategyPyramid uses image pyramid for multi-scale search
+	// StrategyPyramid 使用图像金字塔进行多尺度搜索
 	StrategyPyramid
-	// StrategyPredefined searches in predefined common locations
+	// StrategyPredefined 在预定义的常见位置搜索
 	StrategyPredefined
-	// StrategyFullScan performs full screen scan (slowest, most thorough)
+	// StrategyFullScan 执行全屏扫描（最慢，最彻底）
 	StrategyFullScan
 )
 
-// DetectionStats tracks detection performance metrics
+// DetectionStats 跟踪检测性能指标
 type DetectionStats struct {
 	LastStrategy      DetectionStrategy
 	LastDetectionTime time.Duration
@@ -70,124 +70,124 @@ type DetectionStats struct {
 	TotalDetections   int
 }
 
-// DayDetector detects the current day and phase in the game
+// DayDetector 检测游戏中的当前天数和阶段
 type DayDetector struct {
 	*BaseDetector
 	config     *config.Config
 	lastResult *DayResult
 
-	// Detection regions (legacy, for backward compatibility)
+	// 检测区域（旧版，用于向后兼容）
 	dayRegion Rect
 
-	// Template cache
+	// 模板缓存
 	templates map[string]*DayTemplate
 
-	// Current language
+	// 当前语言
 	currentLang string
 
-	// Configuration
+	// 配置
 	updateInterval      time.Duration
 	lastUpdateTime      time.Time
 	matchThreshold      float64
 	enableTemplateMatch bool
 
-	// Smart detection
-	lastMatchLocation *Point            // Cached location from last successful match
-	searchRadius      int               // Radius for local search around cached location
-	strategy          DetectionStrategy // Current detection strategy
-	stats             DetectionStats    // Performance statistics
+	// 智能检测
+	lastMatchLocation *Point            // 上次成功匹配的缓存位置
+	searchRadius      int               // 围绕缓存位置进行本地搜索的半径
+	strategy          DetectionStrategy // 当前检测策略
+	stats             DetectionStats    // 性能统计
 
-	// Performance tuning
-	colorFilterThreshold float64 // Threshold for bright pixel ratio (0.0-1.0)
+	// 性能调优
+	colorFilterThreshold float64 // 亮像素比率的阈值（0.0-1.0）
 	pyramidScales        []float64
-	candidateStepSize    int // Step size for candidate region scanning
+	candidateStepSize    int // 候选区域扫描的步长
 }
 
-// NewDayDetector creates a new day detector
+// NewDayDetector 创建一个新的天数检测器
 func NewDayDetector(cfg *config.Config) *DayDetector {
 	return &DayDetector{
 		BaseDetector:        NewBaseDetector("DayDetector"),
 		config:              cfg,
 		updateInterval:      time.Duration(cfg.UpdateInterval * float64(time.Second)),
 		templates:           make(map[string]*DayTemplate),
-		currentLang:         "chs", // Default to simplified Chinese
-		matchThreshold:      0.8,   // Default threshold
-		enableTemplateMatch: false, // Disable by default (use mock mode)
+		currentLang:         "chs", // 默认为简体中文
+		matchThreshold:      0.8,   // 默认阈值
+		enableTemplateMatch: false, // 默认禁用（使用模拟模式）
 		lastResult: &DayResult{
 			IsDetected: false,
 		},
-		// Smart detection settings
-		searchRadius:         100,              // Search within 100px radius of last match
-		strategy:             StrategyAuto,     // Auto-select strategy
-		colorFilterThreshold: 0.1,              // 10% bright pixels indicates potential text
-		pyramidScales:        []float64{0.125}, // OPTIMIZED: Aggressive downsampling for speed (8x smaller)
-		candidateStepSize:    80,               // OPTIMIZED: Larger step size for faster scan
+		// 智能检测设置
+		searchRadius:         100,              // 在上次匹配的100px半径内搜索
+		strategy:             StrategyAuto,     // 自动选择策略
+		colorFilterThreshold: 0.1,              // 10%的亮像素表示潜在的文本
+		pyramidScales:        []float64{0.125}, // 优化：激进的降采样以提高速度（8倍缩小）
+		candidateStepSize:    80,               // 优化：更大的步长以加快扫描速度
 		stats:                DetectionStats{},
 	}
 }
 
-// SetLanguage sets the current language for template matching
+// SetLanguage 设置模板匹配的当前语言
 func (d *DayDetector) SetLanguage(lang string) {
 	d.currentLang = lang
 }
 
-// EnableTemplateMatching enables or disables template matching
+// EnableTemplateMatching 启用或禁用模板匹配
 func (d *DayDetector) EnableTemplateMatching(enable bool) {
 	d.enableTemplateMatch = enable
 }
 
-// SetMatchThreshold sets the similarity threshold for template matching
+// SetMatchThreshold 设置模板匹配的相似度阈值
 func (d *DayDetector) SetMatchThreshold(threshold float64) {
 	d.matchThreshold = threshold
 }
 
-// SetDetectionStrategy sets the detection strategy
+// SetDetectionStrategy 设置检测策略
 func (d *DayDetector) SetDetectionStrategy(strategy DetectionStrategy) {
 	d.strategy = strategy
 }
 
-// GetDetectionStats returns the current detection statistics
+// GetDetectionStats 返回当前的检测统计信息
 func (d *DayDetector) GetDetectionStats() DetectionStats {
 	return d.stats
 }
 
-// SetSearchRadius sets the search radius for hotspot cache
+// SetSearchRadius 设置热点缓存的搜索半径
 func (d *DayDetector) SetSearchRadius(radius int) {
 	d.searchRadius = radius
 }
 
-// ResetCache clears the cached hotspot location
+// ResetCache 清除缓存的热点位置
 func (d *DayDetector) ResetCache() {
 	d.lastMatchLocation = nil
 	logger.Debugf("[%s] Hotspot cache reset", d.Name())
 }
 
-// Initialize initializes the day detector
+// Initialize 初始化天数检测器
 func (d *DayDetector) Initialize() error {
 	logger.Infof("[%s] Initializing...", d.Name())
 
-	// Load templates from data directory
+	// 从数据目录加载模板
 	if err := d.loadTemplates(); err != nil {
 		logger.Warningf("[%s] Failed to load templates: %v (using mock mode)", d.Name(), err)
-		// Don't return error - we can still run in mock mode
+		// 不返回错误 - 我们仍然可以在模拟模式下运行
 	} else {
 		logger.Infof("[%s] Templates loaded successfully", d.Name())
 	}
 
-	// Set default detection region (should be calibrated for actual game)
+	// 设置默认检测区域（应针对实际游戏进行校准）
 	d.dayRegion = NewRect(100, 50, 200, 50)
 
 	logger.Infof("[%s] Initialized successfully", d.Name())
 	return nil
 }
 
-// loadTemplates loads day number templates from the data directory
+// loadTemplates 从数据目录加载天数数字模板
 func (d *DayDetector) loadTemplates() error {
-	// Get the data directory path, try multiple possible locations
+	// 获取数据目录路径，尝试多个可能的位置
 	possiblePaths := []string{
-		"data/day_template",         // When running from project root
-		"../../data/day_template",   // When running tests
-		"../data/day_template",      // Alternative location
+		"data/day_template",         // 从项目根目录运行时
+		"../../data/day_template",   // 运行测试时
+		"../data/day_template",      // 备用位置
 	}
 
 	var dataDir string
@@ -204,7 +204,7 @@ func (d *DayDetector) loadTemplates() error {
 		return fmt.Errorf("template directory not found in any of: %v", possiblePaths)
 	}
 
-	// Languages to load
+	// 要加载的语言
 	languages := []string{"chs", "cht", "eng", "jp"}
 
 	for _, lang := range languages {
@@ -212,7 +212,7 @@ func (d *DayDetector) loadTemplates() error {
 			Language: lang,
 		}
 
-		// Load day 1, 2, 3 templates
+		// 加载第1、2、3天的模板
 		for day := 1; day <= 3; day++ {
 			filename := filepath.Join(dataDir, fmt.Sprintf("%s_%d.png", lang, day))
 
@@ -221,7 +221,7 @@ func (d *DayDetector) loadTemplates() error {
 				return fmt.Errorf("failed to load template %s: %w", filename, err)
 			}
 
-			// Store template
+			// 存储模板
 			switch day {
 			case 1:
 				template.Day1 = img
@@ -239,7 +239,7 @@ func (d *DayDetector) loadTemplates() error {
 	return nil
 }
 
-// loadImageFromFile loads an image from a file
+// loadImageFromFile 从文件加载图像
 func loadImageFromFile(filename string) (image.Image, error) {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -255,24 +255,24 @@ func loadImageFromFile(filename string) (image.Image, error) {
 	return img, nil
 }
 
-// Detect performs day detection on the given image
+// Detect 对给定的图像执行天数检测
 func (d *DayDetector) Detect(img image.Image) (interface{}, error) {
 	if !d.IsEnabled() {
 		return d.lastResult, nil
 	}
 
-	// Check if we should update (rate limiting)
+	// 检查是否应该更新（速率限制）
 	now := time.Now()
 	if now.Sub(d.lastUpdateTime) < d.updateInterval {
 		return d.lastResult, nil
 	}
 	d.lastUpdateTime = now
 
-	// Detect day and phase from the image
+	// 从图像中检测天数和阶段
 	day := d.detectDay(img)
 	phase := d.detectPhase(img)
 
-	// If detection failed, return the last result
+	// 如果检测失败，返回上次的结果
 	if day < 0 || phase < 0 {
 		result := &DayResult{
 			IsDetected:   false,
@@ -282,7 +282,7 @@ func (d *DayDetector) Detect(img image.Image) (interface{}, error) {
 		return result, nil
 	}
 
-	// Calculate timing information
+	// 计算时间信息
 	elapsed, shrink, nextPhase := d.calculateTimes(day, phase)
 
 	result := &DayResult{
@@ -299,11 +299,11 @@ func (d *DayDetector) Detect(img image.Image) (interface{}, error) {
 	return result, nil
 }
 
-// Cleanup releases resources used by the detector
+// Cleanup 释放检测器使用的资源
 func (d *DayDetector) Cleanup() error {
 	logger.Infof("[%s] Cleaning up...", d.Name())
 
-	// Clear templates
+	// 清除模板
 	d.templates = nil
 	d.lastResult = nil
 
@@ -311,20 +311,20 @@ func (d *DayDetector) Cleanup() error {
 	return nil
 }
 
-// GetLastResult returns the last detection result
+// GetLastResult 返回上次的检测结果
 func (d *DayDetector) GetLastResult() *DayResult {
 	return d.lastResult
 }
 
-// detectDay detects the current day from the image using intelligent multi-layer search
-// Returns -1 if not detected
+// detectDay 使用智能多层搜索从图像中检测当前天数
+// 如果未检测到则返回 -1
 func (d *DayDetector) detectDay(img image.Image) int {
-	// If template matching is disabled, use mock mode
+	// 如果禁用了模板匹配，则使用模拟模式
 	if !d.enableTemplateMatch {
 		return d.detectDayMock()
 	}
 
-	// Get template for current language
+	// 获取当前语言的模板
 	template, ok := d.templates[d.currentLang]
 	if !ok {
 		logger.Warningf("[%s] No template found for language: %s", d.Name(), d.currentLang)
@@ -333,7 +333,7 @@ func (d *DayDetector) detectDay(img image.Image) int {
 
 	startTime := time.Now()
 
-	// Use intelligent detection based on strategy
+	// 根据策略使用智能检测
 	var day int
 	var location *Point
 
@@ -352,11 +352,11 @@ func (d *DayDetector) detectDay(img image.Image) int {
 		day, location = d.detectDayIntelligent(img, template)
 	}
 
-	// Update statistics
+	// 更新统计信息
 	d.stats.LastDetectionTime = time.Since(startTime)
 	d.stats.TotalDetections++
 
-	// Update cached location if found
+	// 如果找到，则更新缓存位置
 	if day > 0 && location != nil {
 		d.lastMatchLocation = location
 	}
@@ -364,9 +364,9 @@ func (d *DayDetector) detectDay(img image.Image) int {
 	return day
 }
 
-// detectDayIntelligent uses multi-layer intelligent detection (Auto strategy)
+// detectDayIntelligent 使用多层智能检测（自动策略）
 func (d *DayDetector) detectDayIntelligent(img image.Image, template *DayTemplate) (int, *Point) {
-	// Layer 1: Hotspot cache (fastest, usually hits)
+	// 第1层：热点缓存（最快，通常命中）
 	if d.lastMatchLocation != nil {
 		day, loc := d.detectWithHotspotCache(img, template)
 		if day > 0 {
@@ -376,7 +376,7 @@ func (d *DayDetector) detectDayIntelligent(img image.Image, template *DayTemplat
 		}
 	}
 
-	// Layer 2: Predefined hotspots (OPTIMIZED: screen center first - fast for typical DAY display)
+	// 第2层：预定义热点（优化：屏幕中心优先 - 对典型的DAY显示来说很快）
 	day, loc := d.detectWithPredefined(img, template)
 	if day > 0 {
 		d.stats.LastStrategy = StrategyPredefined
@@ -384,7 +384,7 @@ func (d *DayDetector) detectDayIntelligent(img image.Image, template *DayTemplat
 		return day, loc
 	}
 
-	// Layer 3: Color-based filtering (fast, narrows down search)
+	// 第3层：基于颜色的过滤（快速，缩小搜索范围）
 	day, loc = d.detectWithColorFilter(img, template)
 	if day > 0 {
 		d.stats.LastStrategy = StrategyColorFilter
@@ -392,7 +392,7 @@ func (d *DayDetector) detectDayIntelligent(img image.Image, template *DayTemplat
 		return day, loc
 	}
 
-	// Layer 4: Image pyramid (medium speed, good coverage)
+	// 第4层：图像金字塔（中等速度，覆盖良好）
 	day, loc = d.detectWithPyramid(img, template)
 	if day > 0 {
 		d.stats.LastStrategy = StrategyPyramid
@@ -400,7 +400,7 @@ func (d *DayDetector) detectDayIntelligent(img image.Image, template *DayTemplat
 		return day, loc
 	}
 
-	// Layer 5: Full scan (slowest, most thorough - last resort)
+	// 第5层：全屏扫描（最慢，最彻底 - 最后手段）
 	logger.Debugf("[%s] Falling back to full scan", d.Name())
 	day, loc = d.detectWithFullScan(img, template)
 	if day > 0 {
@@ -411,7 +411,7 @@ func (d *DayDetector) detectDayIntelligent(img image.Image, template *DayTemplat
 	return day, loc
 }
 
-// detectWithHotspotCache searches near the last known location
+// detectWithHotspotCache 在最后已知位置附近搜索
 func (d *DayDetector) detectWithHotspotCache(img image.Image, template *DayTemplate) (int, *Point) {
 	if d.lastMatchLocation == nil {
 		return -1, nil
@@ -434,19 +434,19 @@ func (d *DayDetector) detectWithHotspotCache(img image.Image, template *DayTempl
 	return -1, nil
 }
 
-// detectWithColorFilter uses color-based filtering to find candidate regions
+// detectWithColorFilter 使用基于颜色的过滤来查找候选区域
 func (d *DayDetector) detectWithColorFilter(img image.Image, template *DayTemplate) (int, *Point) {
-	// Estimate search window size based on template
+	// 根据模板估计搜索窗口大小
 	templateBounds := template.Day1.Bounds()
 	windowW := templateBounds.Dx() * 3
 	windowH := templateBounds.Dy() * 3
 
-	// Find candidate regions with bright pixels
+	// 查找具有亮像素的候选区域
 	candidates := FindCandidateRegions(img, windowW, windowH, d.candidateStepSize, d.colorFilterThreshold)
 
 	logger.Debugf("[%s] Color filter found %d candidate regions", d.Name(), len(candidates))
 
-	// Search in candidate regions
+	// 在候选区域中搜索
 	for _, region := range candidates {
 		day, loc := d.matchDayInRegion(img, template, region)
 		if day > 0 {
@@ -457,9 +457,9 @@ func (d *DayDetector) detectWithColorFilter(img image.Image, template *DayTempla
 	return -1, nil
 }
 
-// detectWithPyramid uses image pyramid for multi-scale search
+// detectWithPyramid 使用图像金字塔进行多尺度搜索
 func (d *DayDetector) detectWithPyramid(img image.Image, template *DayTemplate) (int, *Point) {
-	// Try each day template with pyramid search
+	// 使用金字塔搜索尝试每个天数模板
 	templates := []image.Image{template.Day1, template.Day2, template.Day3}
 
 	for dayNum, tmpl := range templates {
@@ -475,21 +475,21 @@ func (d *DayDetector) detectWithPyramid(img image.Image, template *DayTemplate) 
 	return -1, nil
 }
 
-// detectWithPredefined searches in predefined common UI locations
+// detectWithPredefined 在预定义的常见UI位置搜索
 func (d *DayDetector) detectWithPredefined(img image.Image, template *DayTemplate) (int, *Point) {
 	bounds := img.Bounds()
 	w, h := bounds.Dx(), bounds.Dy()
 
-	// Common UI locations based on typical game layouts
-	// OPTIMIZED: Screen center first (where DAY text typically appears)
+	// 基于典型游戏布局的常见UI位置
+	// 优化：屏幕中心优先（DAY文本通常出现的位置）
 	predefinedRegions := []Rect{
-		// Center region (highest priority for DAY display)
+		// 中心区域（DAY显示的最高优先级）
 		NewRect(int(float64(w)*0.35), int(float64(h)*0.35), int(float64(w)*0.30), int(float64(h)*0.30)),
-		// Wider center region (fallback if text is slightly off-center)
+		// 更宽的中心区域（如果文本稍微偏离中心的备选方案）
 		NewRect(int(float64(w)*0.25), int(float64(h)*0.25), int(float64(w)*0.50), int(float64(h)*0.50)),
-		// Top-center
+		// 顶部中心
 		NewRect(int(float64(w)*0.40), int(float64(h)*0.02), int(float64(w)*0.20), int(float64(h)*0.15)),
-		// Top-left corner
+		// 左上角
 		NewRect(int(float64(w)*0.02), int(float64(h)*0.02), int(float64(w)*0.20), int(float64(h)*0.15)),
 	}
 
@@ -504,7 +504,7 @@ func (d *DayDetector) detectWithPredefined(img image.Image, template *DayTemplat
 	return -1, nil
 }
 
-// detectWithFullScan performs full screen template matching (slowest)
+// detectWithFullScan 执行全屏模板匹配（最慢）
 func (d *DayDetector) detectWithFullScan(img image.Image, template *DayTemplate) (int, *Point) {
 	bounds := img.Bounds()
 	fullRegion := NewRect(bounds.Min.X, bounds.Min.Y, bounds.Dx(), bounds.Dy())
@@ -512,18 +512,18 @@ func (d *DayDetector) detectWithFullScan(img image.Image, template *DayTemplate)
 	return d.matchDayInRegion(img, template, fullRegion)
 }
 
-// matchDayInRegion tries to match day templates in a specific region
+// matchDayInRegion 尝试在特定区域匹配天数模板
 func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, region Rect) (int, *Point) {
-	// NEW APPROACH: Use vertical segment counting to identify Roman numerals
-	// This is immune to background noise and template matching issues
+	// 新方法：使用垂直段计数来识别罗马数字
+	// 这对背景噪声和模板匹配问题免疫
 
-	// Crop to region
+	// 裁剪到区域
 	regionImg := CropImage(img, region)
 
-	// First, locate "DAY" text using Day 1 template (all templates have same "DAY" part)
-	// We use a lower threshold for initial detection
+	// 首先，使用第1天模板定位"DAY"文本（所有模板都有相同的"DAY"部分）
+	// 我们使用较低的阈值进行初始检测
 	regionBounds := regionImg.Bounds()
-	scale := 0.5 // Better detail preservation
+	scale := 0.5 // 更好的细节保留
 	scaledWidth := int(float64(regionBounds.Dx()) * scale)
 	scaledHeight := int(float64(regionBounds.Dy()) * scale)
 
@@ -535,14 +535,14 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 
 	scaledRegion := ResizeImage(regionImg, scaledWidth, scaledHeight)
 
-	// Use Day 1 template to locate "DAY" text
+	// 使用第1天模板定位"DAY"文本
 	day1Template := template.Day1
 	tmplBounds := day1Template.Bounds()
 	scaledTmplWidth := int(float64(tmplBounds.Dx()) * scale)
 	scaledTmplHeight := int(float64(tmplBounds.Dy()) * scale)
 	scaledTmpl := ResizeImage(day1Template, scaledTmplWidth, scaledTmplHeight)
 
-	// Lower threshold for initial "DAY" detection
+	// 较低的阈值用于初始"DAY"检测
 	result, err := TemplateMatch(scaledRegion, scaledTmpl, 0.7)
 	if err != nil || !result.Found {
 		logger.Debugf("[%s] No DAY text found in region", d.Name())
@@ -552,19 +552,19 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 	logger.Infof("[%s] Found DAY text at (%d, %d) with similarity=%.4f",
 		d.Name(), result.Location.X, result.Location.Y, result.Similarity)
 
-	// Extract the Roman numeral region (rightmost part after "DAY")
-	// Scale coordinates back to original region size
+	// 提取罗马数字区域（"DAY"之后的最右边部分）
+	// 将坐标缩放回原始区域大小
 	dayX := int(float64(result.Location.X) / scale)
 	dayY := int(float64(result.Location.Y) / scale)
 	dayWidth := int(float64(tmplBounds.Dx()))
 
-	// Extract Roman numeral area (adjust based on actual template dimensions)
-	// Roman numerals are positioned after "DAY " text
-	// Based on eng templates: full width is ~342px, "DAY " is ~200px, numerals are ~100px
-	numeralStartRatio := 0.55  // Start 55% into the template (after "DAY ")
-	numeralWidthRatio := 0.4   // Width is 40% of template (enough for "III")
-	numeralYOffsetRatio := 0.15 // Vertical offset 15% from top
-	numeralHeightRatio := 0.7   // Height is 70% of template height
+	// 提取罗马数字区域（根据实际模板尺寸调整）
+	// 罗马数字位于"DAY "文本之后
+	// 基于英文模板：全宽约342px，"DAY "约200px，数字约100px
+	numeralStartRatio := 0.55  // 从模板的55%开始（"DAY "之后）
+	numeralWidthRatio := 0.4   // 宽度为模板的40%（足够容纳"III"）
+	numeralYOffsetRatio := 0.15 // 距顶部15%的垂直偏移
+	numeralHeightRatio := 0.7   // 高度为模板高度的70%
 
 	numeralRegion := NewRect(
 		dayX+int(float64(dayWidth)*numeralStartRatio),
@@ -577,22 +577,22 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 		d.Name(), numeralRegion.X, numeralRegion.Y, numeralRegion.Width, numeralRegion.Height,
 		dayWidth, tmplBounds.Dy())
 
-	// Ensure region is within bounds
+	// 确保区域在边界内
 	if numeralRegion.X < 0 || numeralRegion.Y < 0 ||
 		numeralRegion.X+numeralRegion.Width > regionBounds.Dx() ||
 		numeralRegion.Y+numeralRegion.Height > regionBounds.Dy() {
 		logger.Warningf("[%s] Numeral region out of bounds", d.Name())
-		// Fall back to template matching
+		// 回退到模板匹配
 		return d.matchDayInRegionOld(img, template, region)
 	}
 
 	numeralImg := CropImage(regionImg, numeralRegion)
 
-	// Count vertical segments
+	// 计数垂直段
 	segments := CountVerticalSegments(numeralImg)
 	logger.Infof("[%s] Detected %d vertical segments (Roman numeral)", d.Name(), segments)
 
-	// Map segments to day number
+	// 将段数映射到天数
 	var day int
 	switch segments {
 	case 1:
@@ -606,7 +606,7 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 		return d.matchDayInRegionOld(img, template, region)
 	}
 
-	// Calculate absolute location
+	// 计算绝对位置
 	location := &Point{
 		X: region.X + dayX,
 		Y: region.Y + dayY,
@@ -616,13 +616,13 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 	return day, location
 }
 
-// matchDayInRegionOld is the old template-matching based approach (fallback)
-// Simplified version: just select the template with highest similarity
+// matchDayInRegionOld 是旧的基于模板匹配的方法（备用）
+// 简化版本：只选择相似度最高的模板
 func (d *DayDetector) matchDayInRegionOld(img image.Image, template *DayTemplate, region Rect) (int, *Point) {
 	regionImg := CropImage(img, region)
 	regionBounds := regionImg.Bounds()
 
-	// Use moderate scaling for speed
+	// 使用适度的缩放以提高速度
 	scale := 0.4
 	scaledWidth := int(float64(regionBounds.Dx()) * scale)
 	scaledHeight := int(float64(regionBounds.Dy()) * scale)
@@ -635,7 +635,7 @@ func (d *DayDetector) matchDayInRegionOld(img image.Image, template *DayTemplate
 
 	scaledRegion := ResizeImage(regionImg, scaledWidth, scaledHeight)
 
-	// Try all three templates and select the best match
+	// 尝试所有三个模板并选择最佳匹配
 	templates := []image.Image{template.Day1, template.Day2, template.Day3}
 	bestDay := -1
 	bestSimilarity := 0.0
@@ -668,9 +668,9 @@ func (d *DayDetector) matchDayInRegionOld(img image.Image, template *DayTemplate
 	return -1, nil
 }
 
-// detectDayMock provides mock day detection for testing
+// detectDayMock 提供用于测试的模拟天数检测
 func (d *DayDetector) detectDayMock() int {
-	// Simulate detecting Day 1-3 based on time
+	// 基于时间模拟检测第1-3天
 	seconds := time.Now().Unix() % 30
 	if seconds < 10 {
 		return 1
@@ -681,25 +681,25 @@ func (d *DayDetector) detectDayMock() int {
 	}
 }
 
-// detectPhase detects the current phase from the image
-// Returns -1 if not detected
+// detectPhase 从图像中检测当前阶段
+// 如果未检测到则返回 -1
 func (d *DayDetector) detectPhase(img image.Image) int {
-	// TODO: Implement template matching for phase markers
-	// For now, simulate phase detection that cycles 0-3
+	// TODO: 实现阶段标记的模板匹配
+	// 目前，模拟循环0-3的阶段检测
 
-	// Simulate detecting phases 0-3 based on time
+	// 基于时间模拟检测0-3阶段
 	seconds := time.Now().Unix() % 20
-	return int(seconds / 5) // Returns 0, 1, 2, or 3
+	return int(seconds / 5) // 返回 0, 1, 2, 或 3
 }
 
-// calculateTimes calculates elapsed time, shrink time, and next phase time
+// calculateTimes 计算经过时间、缩圈时间和下一阶段时间
 func (d *DayDetector) calculateTimes(day, phase int) (elapsed, shrink, nextPhase time.Duration) {
-	// Calculate based on game configuration
+	// 基于游戏配置计算
 	if day < 0 || phase < 0 || phase >= len(d.config.DayPeriodSeconds) {
 		return 0, 0, 0
 	}
 
-	// Calculate elapsed time from start of day
+	// 计算从当天开始经过的时间
 	elapsedSeconds := 0
 	for i := 0; i < phase; i++ {
 		if i < len(d.config.DayPeriodSeconds) {
@@ -707,19 +707,19 @@ func (d *DayDetector) calculateTimes(day, phase int) (elapsed, shrink, nextPhase
 		}
 	}
 
-	// Add current phase elapsed time (mock - in real version this would be detected)
+	// 添加当前阶段的经过时间（模拟 - 在实际版本中这将被检测）
 	currentPhaseElapsed := int(time.Now().Unix() % int64(d.config.DayPeriodSeconds[phase]))
 	elapsedSeconds += currentPhaseElapsed
 
 	elapsed = time.Duration(elapsedSeconds) * time.Second
 
-	// Calculate time until next shrink
+	// 计算到下一次缩圈的时间
 	if phase < len(d.config.DayPeriodSeconds) {
 		shrinkSeconds := d.config.DayPeriodSeconds[phase] - currentPhaseElapsed
 		shrink = time.Duration(shrinkSeconds) * time.Second
 	}
 
-	// Next phase is the same as shrink time for now
+	// 下一阶段的时间目前与缩圈时间相同
 	nextPhase = shrink
 
 	return elapsed, shrink, nextPhase
