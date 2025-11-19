@@ -88,34 +88,76 @@ func OCRExtractDigits(img image.Image, language string) (*OCRResult, error) {
 	return result, nil
 }
 
-// OCRExtractDayNumber 从图像中提取天数
+// OCRExtractDayNumber 从图像中提取天数（识别罗马数字 I/II/III）
 func OCRExtractDayNumber(img image.Image) (int, error) {
-	result, err := OCRExtractDigits(img, "eng")
+	// 转换为灰度图
+	gray := RGB2Gray(img)
+
+	// 应用自适应阈值化
+	binary := AdaptiveThreshold(gray)
+
+	// 反转以获得更好的 OCR 效果（白色背景上的黑色文字）
+	inverted := InvertImage(binary)
+
+	// 初始化 Tesseract
+	client := gosseract.NewClient()
+	defer client.Close()
+
+	client.SetLanguage("eng")
+	client.SetPageSegMode(gosseract.PSM_SINGLE_LINE)
+	// 关键修复：识别罗马数字而不是阿拉伯数字
+	client.SetWhitelist("IVX ")
+
+	// 保存图像到临时文件供 Tesseract 使用
+	tmpfile, err := ioutil.TempFile("", "ocr-day-*.png")
 	if err != nil {
-		return -1, err
+		return -1, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer os.Remove(tmpfile.Name())
+	defer tmpfile.Close()
+
+	// 将图像编码为 PNG
+	if err := png.Encode(tmpfile, inverted); err != nil {
+		return -1, fmt.Errorf("failed to encode image: %w", err)
 	}
 
-	if !result.Found || result.Text == "" {
-		return -1, fmt.Errorf("no day number found (OCR returned empty)")
+	// 从文件设置图像
+	if err := client.SetImage(tmpfile.Name()); err != nil {
+		return -1, fmt.Errorf("failed to set image: %w", err)
 	}
 
-	digitRegex := regexp.MustCompile(`(\d+)`)
-	matches := digitRegex.FindStringSubmatch(result.Text)
-
-	if len(matches) < 2 {
-		return -1, fmt.Errorf("no digit in OCR text: '%s'", result.Text)
-	}
-
-	dayNum, err := strconv.Atoi(matches[1])
+	text, err := client.Text()
 	if err != nil {
-		return -1, fmt.Errorf("invalid day number in '%s': %s", result.Text, matches[1])
+		return -1, fmt.Errorf("OCR failed: %w", err)
 	}
 
-	if dayNum < 1 || dayNum > 3 {
-		return -1, fmt.Errorf("day number out of range: %d (from OCR text: '%s')", dayNum, result.Text)
+	text = strings.TrimSpace(text)
+
+	// 识别罗马数字 I, II, III
+	// 简单策略：数 'I' 的个数
+	if text == "" {
+		return -1, fmt.Errorf("no text found (OCR returned empty)")
 	}
 
-	return dayNum, nil
+	// 清理空格
+	text = strings.ReplaceAll(text, " ", "")
+
+	// 匹配罗马数字模式
+	switch text {
+	case "I":
+		return 1, nil
+	case "II":
+		return 2, nil
+	case "III":
+		return 3, nil
+	default:
+		// 尝试数 I 的个数作为 fallback
+		iCount := strings.Count(text, "I")
+		if iCount >= 1 && iCount <= 3 {
+			return iCount, nil
+		}
+		return -1, fmt.Errorf("unrecognized roman numeral: '%s'", text)
+	}
 }
 
 // Threshold 将灰度图转换为二值图
