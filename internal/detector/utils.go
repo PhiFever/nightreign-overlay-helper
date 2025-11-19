@@ -733,3 +733,143 @@ func ExtractRomanNumeralRegion(img image.Image, fullWidth int) image.Image {
 	region := NewRect(numeralX, numeralY, numeralWidth, numeralHeight)
 	return CropImage(img, region)
 }
+
+// ComputeVerticalProjection 计算图像的垂直投影（每列白色像素的总数）
+// 用于分析文字的水平分布，找到 "DAY" 和罗马数字的边界
+func ComputeVerticalProjection(img image.Image) []int {
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	projection := make([]int, width)
+
+	for x := 0; x < width; x++ {
+		count := 0
+		for y := 0; y < height; y++ {
+			r, g, b, _ := img.At(bounds.Min.X+x, bounds.Min.Y+y).RGBA()
+			// 转换为 8 位
+			r8 := uint8(r >> 8)
+			g8 := uint8(g >> 8)
+			b8 := uint8(b >> 8)
+
+			// 检测白色像素（亮度高于阈值）
+			brightness := (int(r8) + int(g8) + int(b8)) / 3
+			if brightness > 160 {
+				count++
+			}
+		}
+		projection[x] = count
+	}
+
+	return projection
+}
+
+// FindRomanNumeralBoundary 基于垂直投影找到罗马数字的起始位置
+// 策略：在 "DAY" 文本后寻找显著的投影下降（间隙）和上升（罗马数字开始）
+func FindRomanNumeralBoundary(projection []int, minGapWidth int) (startX, endX int) {
+	if len(projection) == 0 {
+		return -1, -1
+	}
+
+	// 找到最大投影值作为参考
+	maxProjection := 0
+	for _, p := range projection {
+		if p > maxProjection {
+			maxProjection = p
+		}
+	}
+
+	if maxProjection == 0 {
+		return -1, -1
+	}
+
+	// 阈值：低于这个值认为是间隙
+	gapThreshold := maxProjection / 4
+	// 阈值：高于这个值认为是文字
+	textThreshold := maxProjection / 3
+
+	// 状态机：寻找 "文字 → 间隙 → 文字" 模式
+	// "DAY" → 空格 → 罗马数字
+	inText := false
+	inGap := false
+	gapWidth := 0
+
+	for x := 0; x < len(projection); x++ {
+		p := projection[x]
+
+		if !inText && p >= textThreshold {
+			// 进入第一段文字 ("DAY")
+			inText = true
+			inGap = false
+		} else if inText && !inGap && p < gapThreshold {
+			// 从文字进入间隙
+			inGap = true
+			gapWidth = 1
+		} else if inGap && p < gapThreshold {
+			// 继续在间隙中
+			gapWidth++
+		} else if inGap && p >= textThreshold {
+			// 从间隙进入第二段文字（罗马数字）
+			if gapWidth >= minGapWidth {
+				// 找到了有效的间隙
+				startX = x
+
+				// 继续找到罗马数字的结束位置
+				for endX = x; endX < len(projection); endX++ {
+					if projection[endX] < gapThreshold {
+						break
+					}
+				}
+				return startX, endX
+			}
+			// 间隙太小，重置状态
+			inGap = false
+			inText = true
+		}
+	}
+
+	// 没找到明显的边界
+	return -1, -1
+}
+
+// ExtractRomanNumeralRegionDynamic 动态提取罗马数字区域
+// 使用二值化和垂直投影分析，而非固定比例
+func ExtractRomanNumeralRegionDynamic(matchedRegion image.Image, templateWidth, templateHeight int) Rect {
+	// 1. 先做二值化处理，突出白色文字
+	gray := RGB2Gray(matchedRegion)
+	binary := ThresholdImage(gray, 160)
+
+	// 2. 计算垂直投影
+	projection := ComputeVerticalProjection(binary)
+
+	// 3. 寻找罗马数字的边界（最小间隙宽度：模板宽度的 5%）
+	minGapWidth := templateWidth / 20
+	if minGapWidth < 3 {
+		minGapWidth = 3
+	}
+
+	startX, endX := FindRomanNumeralBoundary(projection, minGapWidth)
+
+	// 4. 如果动态检测失败，回退到保守的固定比例
+	if startX < 0 || endX < 0 || startX >= endX {
+		// 回退策略：从模板宽度的50%开始，占40%宽度
+		// 这比基于 bounds 更可靠，因为 bounds 可能因裁剪而变小
+		startX = int(float64(templateWidth) * 0.50)
+		endX = int(float64(templateWidth) * 0.90)
+	}
+
+	// 确保区域至少有最小宽度
+	minWidth := 20
+	if endX-startX < minWidth {
+		// 扩展到最小宽度
+		center := (startX + endX) / 2
+		startX = center - minWidth/2
+		endX = center + minWidth/2
+	}
+
+	// 5. 垂直方向：保持居中，留出上下边距
+	startY := int(float64(templateHeight) * 0.15)
+	height := int(float64(templateHeight) * 0.70)
+
+	return NewRect(startX, startY, endX-startX, height)
+}

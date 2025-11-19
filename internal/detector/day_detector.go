@@ -556,40 +556,51 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 	// 将坐标缩放回原始区域大小
 	dayX := int(float64(result.Location.X) / scale)
 	dayY := int(float64(result.Location.Y) / scale)
-	dayWidth := int(float64(tmplBounds.Dx()))
 
-	// 提取罗马数字区域（根据实际模板尺寸调整）
-	// 罗马数字位于"DAY "文本之后
-	// 基于英文模板：全宽约342px，"DAY "约200px，数字约100px
-	numeralStartRatio := 0.55  // 从模板的55%开始（"DAY "之后）
-	numeralWidthRatio := 0.4   // 宽度为模板的40%（足够容纳"III"）
-	numeralYOffsetRatio := 0.15 // 距顶部15%的垂直偏移
-	numeralHeightRatio := 0.7   // 高度为模板高度的70%
+	// Phase 2 优化：动态提取罗马数字区域
+	// 使用二值化 + 垂直投影分析，而非固定比例
+	// 确保裁剪区域不越界
+	cropWidth := tmplBounds.Dx()
+	cropHeight := tmplBounds.Dy()
+	if dayX+cropWidth > regionBounds.Dx() {
+		cropWidth = regionBounds.Dx() - dayX
+	}
+	if dayY+cropHeight > regionBounds.Dy() {
+		cropHeight = regionBounds.Dy() - dayY
+	}
 
+	if cropWidth <= 0 || cropHeight <= 0 {
+		logger.Warningf("[%s] Invalid crop region", d.Name())
+		return d.matchDayInRegionOld(img, template, region)
+	}
+
+	matchedTemplateRegion := CropImage(regionImg, NewRect(dayX, dayY, cropWidth, cropHeight))
+	relativeNumeralRegion := ExtractRomanNumeralRegionDynamic(matchedTemplateRegion, tmplBounds.Dx(), tmplBounds.Dy())
+
+	// 转换为绝对坐标（相对于 regionImg）
 	numeralRegion := NewRect(
-		dayX+int(float64(dayWidth)*numeralStartRatio),
-		dayY+int(float64(tmplBounds.Dy())*numeralYOffsetRatio),
-		int(float64(dayWidth)*numeralWidthRatio),
-		int(float64(tmplBounds.Dy())*numeralHeightRatio),
+		dayX+relativeNumeralRegion.X,
+		dayY+relativeNumeralRegion.Y,
+		relativeNumeralRegion.Width,
+		relativeNumeralRegion.Height,
 	)
 
-	logger.Debugf("[%s] Numeral region (before clipping): x=%d, y=%d, w=%d, h=%d (template w=%d, h=%d)",
+	logger.Debugf("[%s] Dynamic numeral region: x=%d, y=%d, w=%d, h=%d (template w=%d, h=%d)",
 		d.Name(), numeralRegion.X, numeralRegion.Y, numeralRegion.Width, numeralRegion.Height,
-		dayWidth, tmplBounds.Dy())
+		tmplBounds.Dx(), tmplBounds.Dy())
 
 	// 自动修正区域边界以确保在图像范围内
-	// 优化：不再直接 fallback，而是裁剪到有效范围
 	clippedRegion := numeralRegion
 
 	// 修正左边界
 	if clippedRegion.X < 0 {
-		clippedRegion.Width += clippedRegion.X // 减少宽度
+		clippedRegion.Width += clippedRegion.X
 		clippedRegion.X = 0
 	}
 
 	// 修正上边界
 	if clippedRegion.Y < 0 {
-		clippedRegion.Height += clippedRegion.Y // 减少高度
+		clippedRegion.Height += clippedRegion.Y
 		clippedRegion.Y = 0
 	}
 
@@ -604,8 +615,8 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 	}
 
 	// 检查修正后的区域是否仍然有效
-	if clippedRegion.Width <= 0 || clippedRegion.Height <= 0 {
-		logger.Warningf("[%s] Numeral region invalid after clipping (w=%d, h=%d), falling back",
+	if clippedRegion.Width <= 10 || clippedRegion.Height <= 10 {
+		logger.Warningf("[%s] Numeral region too small after clipping (w=%d, h=%d), falling back",
 			d.Name(), clippedRegion.Width, clippedRegion.Height)
 		return d.matchDayInRegionOld(img, template, region)
 	}
