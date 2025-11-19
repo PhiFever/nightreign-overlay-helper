@@ -495,16 +495,14 @@ func (d *DayDetector) detectWithFullScan(img image.Image, template *DayTemplate)
 }
 
 // matchDayInRegion 尝试在特定区域匹配天数模板
+// 方案 A: 完全不使用模板匹配，直接 OCR 识别罗马数字
 func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, region Rect) (int, *Point) {
-	// 新方法：直接按比例提取中央区域，无需模板匹配定位
-	// 优势：更快、更稳定、避免模板匹配的子串问题
-
 	// 裁剪到区域
 	regionImg := CropImage(img, region)
 	regionBounds := regionImg.Bounds()
 
 	// 直接提取屏幕中央 1/3 区域 (横向33%-67%, 纵向33%-67%)
-	// 确保这个区域正好包含 "DAY" 文本
+	// 这个区域应该包含完整的 "DAY" 文本
 	centerStartX := int(float64(regionBounds.Dx()) / 3.0)
 	centerStartY := int(float64(regionBounds.Dy()) / 3.0)
 	centerWidth := int(float64(regionBounds.Dx()) / 3.0)
@@ -523,17 +521,36 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 		d.Name(), centerStartX, centerStartY, centerWidth, centerHeight,
 		regionBounds.Dx(), regionBounds.Dy())
 
-	// 在中央区域中提取罗马数字区域
-	// 使用固定比例：罗马数字在中央区域的右侧部分
+	// 方案 A: 直接对整个中央区域使用 OCR 识别罗马数字
+	// 不再细分罗马数字子区域，让 OCR 自动定位和识别
+	logger.Infof("[%s] 🔍 OCR support compiled: %v", d.Name(), OCRAvailable)
+
+	if OCRAvailable {
+		logger.Infof("[%s] 🚀 Using OCR on entire center region (%dx%d)...",
+			d.Name(), centerWidth, centerHeight)
+		dayNum, err := OCRExtractDayNumber(centerImg)
+		if err == nil && dayNum >= 1 && dayNum <= 3 {
+			logger.Infof("[%s] ✅ OCR detection succeeded: Day %d", d.Name(), dayNum)
+			location := &Point{
+				X: region.X + centerStartX,
+				Y: region.Y + centerStartY,
+			}
+			return dayNum, location
+		}
+		logger.Warningf("[%s] ❌ OCR failed (%v), falling back to segment counting", d.Name(), err)
+	} else {
+		logger.Warningf("[%s] ⚠️  OCR not available, using segment counting", d.Name())
+	}
+
+	// OCR 失败或不可用，尝试使用垂直段计数作为后备
+	// 但是对整个中央区域进行段计数可能不准确，所以先尝试提取罗马数字子区域
 	centerBounds := centerImg.Bounds()
 
-	// 使用固定比例提取罗马数字区域
-	// "DAY" 文本结构: "DAY" 占约 70%, 罗马数字占约 30% 在最右侧
-	// 参考旧实现的 75%-100% 提取策略
-	numeralStartX := int(float64(centerBounds.Dx()) * 0.70)
-	numeralWidth := int(float64(centerBounds.Dx()) * 0.30)  // 最右侧 30%
-	numeralStartY := int(float64(centerBounds.Dy()) * 0.30) // 垂直居中
-	numeralHeight := int(float64(centerBounds.Dy()) * 0.40)
+	// 提取中央区域右侧部分（罗马数字通常在这里）
+	numeralStartX := int(float64(centerBounds.Dx()) * 0.60)
+	numeralWidth := int(float64(centerBounds.Dx()) * 0.40)
+	numeralStartY := int(float64(centerBounds.Dy()) * 0.25)
+	numeralHeight := int(float64(centerBounds.Dy()) * 0.50)
 
 	// 确保区域有效
 	if numeralStartX < 0 {
@@ -556,33 +573,11 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 	}
 
 	numeralRegion := NewRect(numeralStartX, numeralStartY, numeralWidth, numeralHeight)
-
-	logger.Debugf("[%s] Numeral region (relative to center): x=%d, y=%d, w=%d, h=%d",
-		d.Name(), numeralRegion.X, numeralRegion.Y, numeralRegion.Width, numeralRegion.Height)
-
-	// 从中央区域提取罗马数字图像
 	numeralImg := CropImage(centerImg, numeralRegion)
 
-	// 优先尝试 OCR（最快最准确）
-	logger.Infof("[%s] 🔍 OCR support compiled: %v", d.Name(), OCRAvailable)
-	if OCRAvailable {
-		logger.Infof("[%s] 🚀 Trying OCR detection on numeral region (%dx%d)...",
-			d.Name(), numeralRegion.Width, numeralRegion.Height)
-		dayNum, err := OCRExtractDayNumber(numeralImg)
-		if err == nil && dayNum >= 1 && dayNum <= 3 {
-			logger.Infof("[%s] ✅ OCR detection succeeded: Day %d", d.Name(), dayNum)
-			location := &Point{
-				X: region.X + centerStartX,
-				Y: region.Y + centerStartY,
-			}
-			return dayNum, location
-		}
-		logger.Warningf("[%s] ❌ OCR failed (%v), falling back to segment counting", d.Name(), err)
-	} else {
-		logger.Warningf("[%s] ⚠️  OCR not available, using segment counting", d.Name())
-	}
+	logger.Debugf("[%s] Fallback: using segment counting on numeral region (%dx%d)",
+		d.Name(), numeralWidth, numeralHeight)
 
-	// OCR 失败或不可用，使用垂直段计数
 	segments := CountVerticalSegments(numeralImg)
 	logger.Infof("[%s] Detected %d vertical segments (Roman numeral)", d.Name(), segments)
 
@@ -600,8 +595,7 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 		return -1, nil
 	}
 
-	// 计算绝对位置 (相对于原始图像)
-	// region起点 + 中央区域起点
+	// 计算绝对位置
 	location := &Point{
 		X: region.X + centerStartX,
 		Y: region.Y + centerStartY,
