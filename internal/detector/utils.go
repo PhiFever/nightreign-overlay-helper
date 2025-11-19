@@ -636,7 +636,7 @@ func CountVerticalSegments(img image.Image) int {
 
 	// 应用阈值化得到二值图像（黑色背景上的白色文本）
 	// 使用适度的阈值来捕获白色文本
-	binary := ThresholdImage(gray, 160)
+	binary := ThresholdImage(gray, 200)
 
 	bounds := binary.Bounds()
 	width := bounds.Dx()
