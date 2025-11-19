@@ -185,9 +185,9 @@ func (d *DayDetector) Initialize() error {
 func (d *DayDetector) loadTemplates() error {
 	// 获取数据目录路径，尝试多个可能的位置
 	possiblePaths := []string{
-		"data/day_template",         // 从项目根目录运行时
-		"../../data/day_template",   // 运行测试时
-		"../data/day_template",      // 备用位置
+		"data/day_template",       // 从项目根目录运行时
+		"../../data/day_template", // 运行测试时
+		"../data/day_template",    // 备用位置
 	}
 
 	var dataDir string
@@ -575,6 +575,7 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 	}
 
 	matchedTemplateRegion := CropImage(regionImg, NewRect(dayX, dayY, cropWidth, cropHeight))
+
 	relativeNumeralRegion := ExtractRomanNumeralRegionDynamic(matchedTemplateRegion, tmplBounds.Dx(), tmplBounds.Dy())
 
 	// 转换为绝对坐标（相对于 regionImg）
@@ -623,8 +624,6 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 
 	// 使用修正后的区域
 	numeralRegion = clippedRegion
-	logger.Debugf("[%s] Numeral region (after clipping): x=%d, y=%d, w=%d, h=%d",
-		d.Name(), numeralRegion.X, numeralRegion.Y, numeralRegion.Width, numeralRegion.Height)
 
 	numeralImg := CropImage(regionImg, numeralRegion)
 
@@ -652,7 +651,7 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 		Y: region.Y + dayY,
 	}
 
-	logger.Infof("[%s] ✅ Segment-based detection: Day %d", d.Name(), day)
+	logger.Infof("[%s] Segment-based detection: Day %d", d.Name(), day)
 	return day, location
 }
 

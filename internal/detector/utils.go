@@ -659,48 +659,54 @@ func CountVerticalSegments(img image.Image) int {
 		}
 	}
 
-	// 在投影中查找峰值（每个峰值 = 一条垂直线/段）
-	// 使用基于最大投影的自适应阈值
-	// 这可以处理不同的图像大小和对比度水平
-	threshold := maxProjection / 3 // 至少是最大投影的 1/3
+	// 方案 A 优化：使用"上升-下降"计数替代局部最大值检测
+	// 这对密集的罗马数字竖线 (I/II/III) 更鲁棒
+	//
+	// 算法：当投影从低于阈值上升到高于阈值时，计为一个竖线
+	// 优点：不依赖峰值间距，能检测到间隔很窄的竖线
 
-	if threshold < height/6 {
-		threshold = height / 6 // 备用：至少是高度的 1/6
+	bars := 0
+	inBar := false
+
+	// 使用更激进的阈值：maxProjection 的 30%
+	// 提高阈值可以更好地区分密集竖线之间的间隙
+	barThreshold := int(float64(maxProjection) * 0.30)
+
+	// 备用阈值：至少是高度的 10%
+	minThreshold := height / 10
+	if barThreshold < minThreshold {
+		barThreshold = minThreshold
 	}
 
-	// 峰值检测：在投影中查找局部最大值
-	// 每个罗马数字垂直条在投影中创建一个峰值
-	peaks := 0
-	// 平衡灵敏度和抗噪声：45% 是经过测试的折衷值
-	// 35% 会产生假峰值（Day2_test2 检测到 5 个），50% 会漏检
-	peakThreshold := int(float64(maxProjection) * 0.45)
-
-	for x := 1; x < width-1; x++ {
-		// 检查这是否是局部最大值
-		if projection[x] > projection[x-1] && projection[x] > projection[x+1] && projection[x] >= peakThreshold {
-			peaks++
-			// 跳过附近的点以避免多次计数同一个峰值
-			x += 2
+	// 调试：记录投影统计
+	nonZeroCount := 0
+	for _, p := range projection {
+		if p > 0 {
+			nonZeroCount++
 		}
 	}
 
-	// 如果没有找到峰值，回退到简单的段计数
-	if peaks == 0 {
-		inSegment := false
-		for x := 0; x < width; x++ {
-			if projection[x] >= threshold {
-				if !inSegment {
-					peaks++
-					inSegment = true
-				}
-			} else if projection[x] < threshold/2 {
-				// 需要显著下降才能结束段
-				inSegment = false
+	for x := 0; x < width; x++ {
+		if projection[x] >= barThreshold {
+			// 投影高于阈值：在竖线内
+			if !inBar {
+				// 从间隙进入竖线：计数 +1
+				bars++
+				inBar = true
 			}
+		} else {
+			// 投影低于阈值：在间隙中
+			inBar = false
 		}
 	}
 
-	return peaks
+	// 如果检测结果异常，输出调试信息
+	if bars == 0 || bars > 5 {
+		fmt.Printf("[DEBUG] CountVerticalSegments: width=%d, height=%d, maxProj=%d, threshold=%d, nonZero=%d/%d, bars=%d\n",
+			width, height, maxProjection, barThreshold, nonZeroCount, width, bars)
+	}
+
+	return bars
 }
 
 // ExtractRomanNumeralRegion 提取可能包含罗马数字的区域
@@ -835,6 +841,10 @@ func FindRomanNumeralBoundary(projection []int, minGapWidth int) (startX, endX i
 // ExtractRomanNumeralRegionDynamic 动态提取罗马数字区域
 // 使用二值化和垂直投影分析，而非固定比例
 func ExtractRomanNumeralRegionDynamic(matchedRegion image.Image, templateWidth, templateHeight int) Rect {
+	bounds := matchedRegion.Bounds()
+	actualWidth := bounds.Dx()
+	actualHeight := bounds.Dy()
+
 	// 1. 先做二值化处理，突出白色文字
 	gray := RGB2Gray(matchedRegion)
 	binary := ThresholdImage(gray, 160)
@@ -851,11 +861,17 @@ func ExtractRomanNumeralRegionDynamic(matchedRegion image.Image, templateWidth, 
 	startX, endX := FindRomanNumeralBoundary(projection, minGapWidth)
 
 	// 4. 如果动态检测失败，回退到保守的固定比例
-	if startX < 0 || endX < 0 || startX >= endX {
-		// 回退策略：从模板宽度的50%开始，占40%宽度
-		// 这比基于 bounds 更可靠，因为 bounds 可能因裁剪而变小
-		startX = int(float64(templateWidth) * 0.50)
-		endX = int(float64(templateWidth) * 0.90)
+	// 关键修复：使用实际区域宽度而非模板宽度
+	// 合理性检查：如果检测到的区域太小（< 模板宽度的 10%），认为检测失败
+	minReasonableWidth := templateWidth / 10
+	if startX < 0 || endX < 0 || startX >= endX || (endX-startX) < minReasonableWidth {
+		// 回退策略：罗马数字在"DAY"文本之后
+		// 使用65%-98%的水平位置，平衡覆盖范围和噪声
+		startX = int(float64(actualWidth) * 0.65)
+		endX = int(float64(actualWidth) * 0.98)
+		if endX <= startX {
+			endX = actualWidth
+		}
 	}
 
 	// 确保区域至少有最小宽度
@@ -867,9 +883,9 @@ func ExtractRomanNumeralRegionDynamic(matchedRegion image.Image, templateWidth, 
 		endX = center + minWidth/2
 	}
 
-	// 5. 垂直方向：保持居中，留出上下边距
-	startY := int(float64(templateHeight) * 0.15)
-	height := int(float64(templateHeight) * 0.70)
+	// 5. 垂直方向：使用实际高度，保持居中，留出上下边距
+	startY := int(float64(actualHeight) * 0.15)
+	height := int(float64(actualHeight) * 0.70)
 
 	return NewRect(startX, startY, endX-startX, height)
 }

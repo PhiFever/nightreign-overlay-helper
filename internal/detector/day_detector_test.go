@@ -539,7 +539,6 @@ func TestRealGameScreenshots(t *testing.T) {
 
 			// Log detection results
 			if dayResult.IsDetected {
-				t.Logf("✅ Detection successful!")
 				t.Logf("   Detected: Day %d", dayResult.Day)
 				t.Logf("   Expected: Day %d", tc.expectedDay)
 				t.Logf("   Strategy: %v", stats.LastStrategy)
@@ -552,6 +551,7 @@ func TestRealGameScreenshots(t *testing.T) {
 				if dayResult.Day == tc.expectedDay {
 					successCount++
 				}
+				t.Logf("✅ Detection successful!")
 			} else {
 				t.Logf("❌ Detection failed - Day not found")
 				t.Logf("   Expected: Day %d", tc.expectedDay)
