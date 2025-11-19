@@ -433,6 +433,7 @@ func (d *DayDetector) detectDayIntelligent(img image.Image, template *DayTemplat
 
 // detectWithOCR uses OCR to extract the day number from screen
 func (d *DayDetector) detectWithOCR(img image.Image) (int, *Point) {
+	logger.Infof("[%s] Starting OCR detection...", d.Name())
 	bounds := img.Bounds()
 	w, h := bounds.Dx(), bounds.Dy()
 
@@ -448,31 +449,31 @@ func (d *DayDetector) detectWithOCR(img image.Image) (int, *Point) {
 
 	// Try OCR on each region
 	for i, region := range ocrRegions {
+		logger.Infof("[%s] Trying OCR region %d (%d, %d, %dx%d)",
+			d.Name(), i+1, region.X, region.Y, region.Width, region.Height)
+
 		// Crop to region
 		regionImg := CropImage(img, region)
 
 		// Try to extract day number using OCR
 		dayNum, err := OCRExtractDayNumber(regionImg)
 		if err != nil {
-			logger.Debugf("[%s] OCR region %d (%d, %d, %dx%d) failed: %v",
-				d.Name(), i+1, region.X, region.Y, region.Width, region.Height, err)
+			logger.Infof("[%s] OCR region %d failed: %v", d.Name(), i+1, err)
 			continue
 		}
 
 		if dayNum >= 1 && dayNum <= 3 {
-			logger.Debugf("[%s] OCR found Day %d in region %d (%d, %d, %dx%d)",
-				d.Name(), dayNum, i+1, region.X, region.Y, region.Width, region.Height)
+			logger.Infof("[%s] ✅ OCR found Day %d in region %d", d.Name(), dayNum, i+1)
 			// Return center of the region as location
 			centerX := region.X + region.Width/2
 			centerY := region.Y + region.Height/2
 			return dayNum, &Point{X: centerX, Y: centerY}
 		} else {
-			logger.Debugf("[%s] OCR region %d got invalid day: %d",
-				d.Name(), i+1, dayNum)
+			logger.Infof("[%s] OCR region %d got invalid day: %d", d.Name(), i+1, dayNum)
 		}
 	}
 
-	logger.Debugf("[%s] OCR detection failed in all regions", d.Name())
+	logger.Infof("[%s] ❌ OCR detection failed in all regions", d.Name())
 	return -1, nil
 }
 
