@@ -834,27 +834,17 @@ func ExtractRomanNumeralRegionDynamic(matchedRegion image.Image, templateWidth, 
 	bounds := matchedRegion.Bounds()
 	actualHeight := bounds.Dy()
 
-	// 1. 先做二值化处理，突出白色文字
-	gray := RGB2Gray(matchedRegion)
-	binary := ThresholdImage(gray, 160)
+	// 简化策略：完全放弃动态检测，使用固定比例
+	// 罗马数字在"DAY"模板中的固定位置：水平 70%-95%，垂直居中
+	startX := int(float64(bounds.Dx()) * 0.70)
+	endX := int(float64(bounds.Dx()) * 0.95)
 
-	// 2. 计算垂直投影
-	projection := ComputeVerticalProjection(binary)
-
-	// 3. 寻找罗马数字的边界（最小间隙宽度：模板宽度的 5%）
-	minGapWidth := templateWidth / 20
-	if minGapWidth < 3 {
-		minGapWidth = 3
-	}
-
-	startX, endX := FindRomanNumeralBoundary(projection, minGapWidth)
-
-	// 4. 如果动态检测失败，直接返回失败（无 fallback）
-	if startX < 0 || endX < 0 || startX >= endX || (endX-startX) < 10 {
+	// 确保有效宽度
+	if endX <= startX || (endX - startX) < 10 {
 		return NewRect(0, 0, 0, 0)
 	}
 
-	// 5. 垂直方向：使用实际高度，保持居中，留出上下边距
+	// 垂直方向：使用实际高度，保持居中，留出上下边距
 	startY := int(float64(actualHeight) * 0.15)
 	height := int(float64(actualHeight) * 0.70)
 
