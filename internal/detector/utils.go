@@ -559,3 +559,68 @@ func max(a, b int) int {
 	}
 	return b
 }
+// EdgeDetect applies Sobel edge detection to a grayscale image
+// This helps eliminate background noise and focus on text structure
+func EdgeDetect(img *image.Gray) *image.Gray {
+	bounds := img.Bounds()
+	width, height := bounds.Dx(), bounds.Dy()
+
+	edges := image.NewGray(bounds)
+
+	// Sobel kernels
+	gx := [3][3]int{
+		{-1, 0, 1},
+		{-2, 0, 2},
+		{-1, 0, 1},
+	}
+
+	gy := [3][3]int{
+		{-1, -2, -1},
+		{0, 0, 0},
+		{1, 2, 1},
+	}
+
+	// Apply Sobel operator
+	for y := 1; y < height-1; y++ {
+		for x := 1; x < width-1; x++ {
+			var sumX, sumY int
+
+			for ky := -1; ky <= 1; ky++ {
+				for kx := -1; kx <= 1; kx++ {
+					pixel := int(img.GrayAt(bounds.Min.X+x+kx, bounds.Min.Y+y+ky).Y)
+					sumX += pixel * gx[ky+1][kx+1]
+					sumY += pixel * gy[ky+1][kx+1]
+				}
+			}
+
+			// Calculate gradient magnitude
+			magnitude := math.Sqrt(float64(sumX*sumX + sumY*sumY))
+			if magnitude > 255 {
+				magnitude = 255
+			}
+
+			edges.SetGray(bounds.Min.X+x, bounds.Min.Y+y, color.Gray{Y: uint8(magnitude)})
+		}
+	}
+
+	return edges
+}
+
+// ThresholdImage applies binary thresholding to highlight strong edges
+func ThresholdImage(img *image.Gray, threshold uint8) *image.Gray {
+	bounds := img.Bounds()
+	result := image.NewGray(bounds)
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			v := img.GrayAt(x, y).Y
+			if v >= threshold {
+				result.SetGray(x, y, color.Gray{Y: 255})
+			} else {
+				result.SetGray(x, y, color.Gray{Y: 0})
+			}
+		}
+	}
+
+	return result
+}
