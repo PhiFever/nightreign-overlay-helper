@@ -633,7 +633,21 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 
 	numeralImg := CropImage(regionImg, numeralRegion)
 
-	// 计数垂直段
+	// 优先尝试 OCR（最快最准确）
+	if OCRAvailable {
+		dayNum, err := OCRExtractDayNumber(numeralImg)
+		if err == nil && dayNum >= 1 && dayNum <= 3 {
+			logger.Infof("[%s] ✅ OCR detection succeeded: Day %d", d.Name(), dayNum)
+			location := &Point{
+				X: region.X + dayX,
+				Y: region.Y + dayY,
+			}
+			return dayNum, location
+		}
+		logger.Debugf("[%s] OCR failed (%v), falling back to segment counting", d.Name(), err)
+	}
+
+	// OCR 失败或不可用，使用垂直段计数
 	segments := CountVerticalSegments(numeralImg)
 	logger.Infof("[%s] Detected %d vertical segments (Roman numeral)", d.Name(), segments)
 
