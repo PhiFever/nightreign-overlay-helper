@@ -503,10 +503,11 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 
 	// 直接提取屏幕中央 1/3 区域 (横向33%-67%, 纵向33%-67%)
 	// 这个区域应该包含完整的 "DAY" 文本
-	centerStartX := int(float64(regionBounds.Dx()) / 3.0)
-	centerStartY := int(float64(regionBounds.Dy()) / 3.0)
-	centerWidth := int(float64(regionBounds.Dx()) / 3.0)
-	centerHeight := int(float64(regionBounds.Dy()) / 3.0)
+	// 所选参数完全为经验值，可能需要根据实际游戏 UI 进行调整
+	centerStartX := int(float64(regionBounds.Dx()) * 0.42)
+	centerStartY := int(float64(regionBounds.Dy()) * 0.48)
+	centerWidth := int(float64(regionBounds.Dx()) * 0.16)
+	centerHeight := int(float64(regionBounds.Dy()) * 0.10)
 
 	// 确保区域有效
 	if centerWidth <= 0 || centerHeight <= 0 {
