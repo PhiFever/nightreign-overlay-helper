@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/png"
 	"math"
+	"os"
 )
 
 // Point 表示一个二维点
@@ -826,6 +828,19 @@ func FindRomanNumeralBoundary(projection []int, minGapWidth int) (startX, endX i
 	}
 
 	return startX, endX
+}
+
+// SaveDebugImage 保存调试图像到文件
+func SaveDebugImage(img image.Image, filename string) error {
+	// 导入必要的包
+	file, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// 将图像编码为 PNG
+	return png.Encode(file, img)
 }
 
 // ExtractRomanNumeralRegionDynamic 动态提取罗马数字区域
