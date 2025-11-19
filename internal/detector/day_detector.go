@@ -617,12 +617,13 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 }
 
 // matchDayInRegionOld is the old template-matching based approach (fallback)
+// Simplified version: just select the template with highest similarity
 func (d *DayDetector) matchDayInRegionOld(img image.Image, template *DayTemplate, region Rect) (int, *Point) {
-	// Crop to region
 	regionImg := CropImage(img, region)
-
 	regionBounds := regionImg.Bounds()
-	scale := 0.35
+
+	// Use moderate scaling for speed
+	scale := 0.4
 	scaledWidth := int(float64(regionBounds.Dx()) * scale)
 	scaledHeight := int(float64(regionBounds.Dy()) * scale)
 
@@ -634,20 +635,13 @@ func (d *DayDetector) matchDayInRegionOld(img image.Image, template *DayTemplate
 
 	scaledRegion := ResizeImage(regionImg, scaledWidth, scaledHeight)
 
-	// Try each day template
+	// Try all three templates and select the best match
 	templates := []image.Image{template.Day1, template.Day2, template.Day3}
-
-	// Track all matches for comparison
-	type matchInfo struct {
-		day        int
-		similarity float64
-		location   *Point
-		width      int // Template width for tie-breaking
-	}
-	var matches []matchInfo
+	bestDay := -1
+	bestSimilarity := 0.0
+	var bestLocation *Point
 
 	for dayNum, tmpl := range templates {
-		// Scale template to match the downsampled region
 		tmplBounds := tmpl.Bounds()
 		scaledTmplWidth := int(float64(tmplBounds.Dx()) * scale)
 		scaledTmplHeight := int(float64(tmplBounds.Dy()) * scale)
@@ -655,114 +649,23 @@ func (d *DayDetector) matchDayInRegionOld(img image.Image, template *DayTemplate
 
 		result, err := TemplateMatch(scaledRegion, scaledTmpl, d.matchThreshold)
 		if err == nil && result.Found {
-			logger.Infof("[%s] Day %d template: similarity=%.4f width=%d (threshold=%.2f) ✓",
-				d.Name(), dayNum+1, result.Similarity, tmplBounds.Dx(), d.matchThreshold)
-
-			matches = append(matches, matchInfo{
-				day:        dayNum + 1,
-				similarity: result.Similarity,
-				location: &Point{
+			if result.Similarity > bestSimilarity {
+				bestSimilarity = result.Similarity
+				bestDay = dayNum + 1
+				bestLocation = &Point{
 					X: region.X + int(float64(result.Location.X)/scale),
 					Y: region.Y + int(float64(result.Location.Y)/scale),
-				},
-				width: tmplBounds.Dx(),
-			})
-		} else if err == nil {
-			logger.Infof("[%s] Day %d template: similarity=%.4f (threshold=%.2f) ✗",
-				d.Name(), dayNum+1, result.Similarity, d.matchThreshold)
+				}
+			}
 		}
 	}
 
-	// CRITICAL FIX: Heuristic matching to handle substring problem
-	// Problem: "DAY I" (Day 1) matches "DAY II" and "DAY III" with HIGH similarity (~0.91)
-	// because "I" is a substring of "II" and "III"
-	//
-	// Observation from test data:
-	//   Day 1 template ALWAYS scores highest (~0.91), even for Day 2/3 images!
-	//   Day 2/3 templates score lower (~0.86-0.89) but are more discriminative
-	//
-	// Solution: Use a heuristic rule:
-	//   - If Day 2 OR Day 3 template scores high (>0.85), ignore Day 1's high score
-	//   - Choose the highest scoring template among Day 2 and Day 3
-	//   - Only use Day 1 if Day 2/3 scores are low (<0.85)
-	if len(matches) == 0 {
-		return -1, nil
+	if bestDay > 0 {
+		logger.Infof("[%s] Fallback: Day %d (similarity=%.4f)", d.Name(), bestDay, bestSimilarity)
+		return bestDay, bestLocation
 	}
 
-	// Extract individual match scores
-	var day1Match, day2Match, day3Match *matchInfo
-	for i := range matches {
-		switch matches[i].day {
-		case 1:
-			day1Match = &matches[i]
-		case 2:
-			day2Match = &matches[i]
-		case 3:
-			day3Match = &matches[i]
-		}
-	}
-
-	// Log all scores for debugging
-	logger.Debugf("[%s] Match scores: Day1=%.4f, Day2=%.4f, Day3=%.4f",
-		d.Name(),
-		func() float64 { if day1Match != nil { return day1Match.similarity }; return 0.0 }(),
-		func() float64 { if day2Match != nil { return day2Match.similarity }; return 0.0 }(),
-		func() float64 { if day3Match != nil { return day3Match.similarity }; return 0.0 }())
-
-	// HEURISTIC MATCHING STRATEGY (refined)
-	//
-	// Analysis of test data shows:
-	//   Day 1 image: Day1=0.9128 >> Day2=0.8719, Day3=0.8864 (gap ~2-4%)
-	//   Day 2 image: Day1=0.9042 > Day3=0.8802 > Day2=0.8684 (Day 1 wrong!)
-	//   Day 3 image: Day1=0.9111 > Day3=0.8900 > Day2=0.8780 (Day 1 wrong!)
-	//
-	// Strategy:
-	//   1. If Day 1 has significant lead over BOTH Day 2 AND Day 3 (>2%), choose Day 1
-	//   2. Otherwise, choose the highest between Day 2 and Day 3 (ignore Day 1)
-	//
-	// This works because:
-	//   - Real Day 1 images have Day 1 template clearly highest
-	//   - Real Day 2/3 images have Day 1 high but Day 2/3 not far behind
-
-	const day1LeadThreshold = 0.028 // Day 1 must lead by >2.8% to be trusted (tuned empirically)
-
-	day1Sim := func() float64 { if day1Match != nil { return day1Match.similarity }; return 0.0 }()
-	day2Sim := func() float64 { if day2Match != nil { return day2Match.similarity }; return 0.0 }()
-	day3Sim := func() float64 { if day3Match != nil { return day3Match.similarity }; return 0.0 }()
-
-	// Calculate Day 1's lead over Day 2 and Day 3
-	day1LeadOverDay2 := day1Sim - day2Sim
-	day1LeadOverDay3 := day1Sim - day3Sim
-
-	// If Day 1 has clear lead over BOTH Day 2 AND Day 3, it's likely real Day 1
-	if day1Match != nil && day1LeadOverDay2 > day1LeadThreshold && day1LeadOverDay3 > day1LeadThreshold {
-		logger.Infof("[%s] Day 1 has clear lead (%.1f%% over Day2, %.1f%% over Day3) -> Day 1",
-			d.Name(), day1LeadOverDay2*100, day1LeadOverDay3*100)
-		logger.Infof("[%s] Final selection: Day 1 (similarity=%.4f)", d.Name(), day1Sim)
-		return day1Match.day, day1Match.location
-	}
-
-	// Day 1 doesn't have clear lead, choose between Day 2 and Day 3
-	logger.Infof("[%s] Day 1 lead insufficient (%.1f%% over Day2, %.1f%% over Day3) -> choosing Day 2/3",
-		d.Name(), day1LeadOverDay2*100, day1LeadOverDay3*100)
-
-	if day2Sim >= day3Sim && day2Match != nil {
-		logger.Infof("[%s] Final selection: Day 2 (similarity=%.4f)", d.Name(), day2Sim)
-		return day2Match.day, day2Match.location
-	} else if day3Match != nil {
-		logger.Infof("[%s] Final selection: Day 3 (similarity=%.4f)", d.Name(), day3Sim)
-		return day3Match.day, day3Match.location
-	}
-
-	// Fallback (shouldn't reach here)
-	logger.Warningf("[%s] Unexpected fallback in heuristic matching", d.Name())
-	bestMatch := matches[0]
-	for i := 1; i < len(matches); i++ {
-		if matches[i].similarity > bestMatch.similarity {
-			bestMatch = matches[i]
-		}
-	}
-	return bestMatch.day, bestMatch.location
+	return -1, nil
 }
 
 // detectDayMock provides mock day detection for testing
