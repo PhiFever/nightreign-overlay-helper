@@ -671,7 +671,9 @@ func CountVerticalSegments(img image.Image) int {
 	// 峰值检测：在投影中查找局部最大值
 	// 每个罗马数字垂直条在投影中创建一个峰值
 	peaks := 0
-	peakThreshold := maxProjection / 2 // 峰值必须至少是最大值的一半
+	// 平衡灵敏度和抗噪声：45% 是经过测试的折衷值
+	// 35% 会产生假峰值（Day2_test2 检测到 5 个），50% 会漏检
+	peakThreshold := int(float64(maxProjection) * 0.45)
 
 	for x := 1; x < width-1; x++ {
 		// 检查这是否是局部最大值

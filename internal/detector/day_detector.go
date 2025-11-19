@@ -573,18 +573,47 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 		int(float64(tmplBounds.Dy())*numeralHeightRatio),
 	)
 
-	logger.Debugf("[%s] Numeral region: x=%d, y=%d, w=%d, h=%d (template w=%d, h=%d)",
+	logger.Debugf("[%s] Numeral region (before clipping): x=%d, y=%d, w=%d, h=%d (template w=%d, h=%d)",
 		d.Name(), numeralRegion.X, numeralRegion.Y, numeralRegion.Width, numeralRegion.Height,
 		dayWidth, tmplBounds.Dy())
 
-	// 确保区域在边界内
-	if numeralRegion.X < 0 || numeralRegion.Y < 0 ||
-		numeralRegion.X+numeralRegion.Width > regionBounds.Dx() ||
-		numeralRegion.Y+numeralRegion.Height > regionBounds.Dy() {
-		logger.Warningf("[%s] Numeral region out of bounds", d.Name())
-		// 回退到模板匹配
+	// 自动修正区域边界以确保在图像范围内
+	// 优化：不再直接 fallback，而是裁剪到有效范围
+	clippedRegion := numeralRegion
+
+	// 修正左边界
+	if clippedRegion.X < 0 {
+		clippedRegion.Width += clippedRegion.X // 减少宽度
+		clippedRegion.X = 0
+	}
+
+	// 修正上边界
+	if clippedRegion.Y < 0 {
+		clippedRegion.Height += clippedRegion.Y // 减少高度
+		clippedRegion.Y = 0
+	}
+
+	// 修正右边界
+	if clippedRegion.X+clippedRegion.Width > regionBounds.Dx() {
+		clippedRegion.Width = regionBounds.Dx() - clippedRegion.X
+	}
+
+	// 修正下边界
+	if clippedRegion.Y+clippedRegion.Height > regionBounds.Dy() {
+		clippedRegion.Height = regionBounds.Dy() - clippedRegion.Y
+	}
+
+	// 检查修正后的区域是否仍然有效
+	if clippedRegion.Width <= 0 || clippedRegion.Height <= 0 {
+		logger.Warningf("[%s] Numeral region invalid after clipping (w=%d, h=%d), falling back",
+			d.Name(), clippedRegion.Width, clippedRegion.Height)
 		return d.matchDayInRegionOld(img, template, region)
 	}
+
+	// 使用修正后的区域
+	numeralRegion = clippedRegion
+	logger.Debugf("[%s] Numeral region (after clipping): x=%d, y=%d, w=%d, h=%d",
+		d.Name(), numeralRegion.X, numeralRegion.Y, numeralRegion.Width, numeralRegion.Height)
 
 	numeralImg := CropImage(regionImg, numeralRegion)
 
@@ -619,52 +648,9 @@ func (d *DayDetector) matchDayInRegion(img image.Image, template *DayTemplate, r
 // matchDayInRegionOld 是旧的基于模板匹配的方法（备用）
 // 简化版本：只选择相似度最高的模板
 func (d *DayDetector) matchDayInRegionOld(img image.Image, template *DayTemplate, region Rect) (int, *Point) {
-	regionImg := CropImage(img, region)
-	regionBounds := regionImg.Bounds()
-
-	// 使用适度的缩放以提高速度
-	scale := 0.4
-	scaledWidth := int(float64(regionBounds.Dx()) * scale)
-	scaledHeight := int(float64(regionBounds.Dy()) * scale)
-
-	if scaledWidth < 70 || scaledHeight < 70 {
-		scale = 1.0
-		scaledWidth = regionBounds.Dx()
-		scaledHeight = regionBounds.Dy()
-	}
-
-	scaledRegion := ResizeImage(regionImg, scaledWidth, scaledHeight)
-
-	// 尝试所有三个模板并选择最佳匹配
-	templates := []image.Image{template.Day1, template.Day2, template.Day3}
-	bestDay := -1
-	bestSimilarity := 0.0
-	var bestLocation *Point
-
-	for dayNum, tmpl := range templates {
-		tmplBounds := tmpl.Bounds()
-		scaledTmplWidth := int(float64(tmplBounds.Dx()) * scale)
-		scaledTmplHeight := int(float64(tmplBounds.Dy()) * scale)
-		scaledTmpl := ResizeImage(tmpl, scaledTmplWidth, scaledTmplHeight)
-
-		result, err := TemplateMatch(scaledRegion, scaledTmpl, d.matchThreshold)
-		if err == nil && result.Found {
-			if result.Similarity > bestSimilarity {
-				bestSimilarity = result.Similarity
-				bestDay = dayNum + 1
-				bestLocation = &Point{
-					X: region.X + int(float64(result.Location.X)/scale),
-					Y: region.Y + int(float64(result.Location.Y)/scale),
-				}
-			}
-		}
-	}
-
-	if bestDay > 0 {
-		logger.Infof("[%s] Fallback: Day %d (similarity=%.4f)", d.Name(), bestDay, bestSimilarity)
-		return bestDay, bestLocation
-	}
-
+	// 禁用模板匹配 fallback：由于子串匹配问题，总是倾向选择 Day 1 或 Day 3
+	// 更诚实的做法是承认检测失败，而不是给出误导性的结果
+	logger.Warningf("[%s] Segment-based detection failed, no reliable fallback available", d.Name())
 	return -1, nil
 }
 
