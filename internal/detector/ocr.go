@@ -12,6 +12,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/otiai10/gosseract/v2"
 )
@@ -91,6 +92,9 @@ func OCRExtractDigits(img image.Image, language string) (*OCRResult, error) {
 func OCRExtractDayNumber(img image.Image) (int, error) {
 	bounds := img.Bounds()
 
+	// 生成唯一文件ID，避免同一测试中的图片互相覆盖
+	fileID := fmt.Sprintf("%d", time.Now().UnixNano())
+
 	// 调试：保存原始图像
 	debugDir := "/tmp/ocr_debug"
 	os.MkdirAll(debugDir, 0755)
@@ -99,7 +103,7 @@ func OCRExtractDayNumber(img image.Image) (int, error) {
 	gray := RGB2Gray(img)
 
 	// 保存灰度图
-	if f, err := os.Create(fmt.Sprintf("%s/01_gray_%dx%d.png", debugDir, bounds.Dx(), bounds.Dy())); err == nil {
+	if f, err := os.Create(fmt.Sprintf("%s/01_gray_%s_%dx%d.png", debugDir, fileID, bounds.Dx(), bounds.Dy())); err == nil {
 		png.Encode(f, gray)
 		f.Close()
 	}
@@ -108,7 +112,7 @@ func OCRExtractDayNumber(img image.Image) (int, error) {
 	binary := AdaptiveThreshold(gray)
 
 	// 保存二值图
-	if f, err := os.Create(fmt.Sprintf("%s/02_binary_%dx%d.png", debugDir, bounds.Dx(), bounds.Dy())); err == nil {
+	if f, err := os.Create(fmt.Sprintf("%s/02_binary_%s_%dx%d.png", debugDir, fileID, bounds.Dx(), bounds.Dy())); err == nil {
 		png.Encode(f, binary)
 		f.Close()
 	}
@@ -125,7 +129,7 @@ func OCRExtractDayNumber(img image.Image) (int, error) {
 
 	for _, testImg := range testImages {
 		// 保存测试图像
-		if f, err := os.Create(fmt.Sprintf("%s/03_%s_%dx%d.png", debugDir, testImg.name, bounds.Dx(), bounds.Dy())); err == nil {
+		if f, err := os.Create(fmt.Sprintf("%s/03_%s_%s_%dx%d.png", debugDir, testImg.name, fileID, bounds.Dx(), bounds.Dy())); err == nil {
 			png.Encode(f, testImg.img)
 			f.Close()
 		}
