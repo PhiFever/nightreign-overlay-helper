@@ -3,6 +3,23 @@ package detector
 import (
 	"image"
 	"image/color"
+	"image/png"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/PhiFever/nightreign-overlay-helper/internal/config"
+	"github.com/PhiFever/nightreign-overlay-helper/internal/logger"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+package detector
+
+import (
+	"image"
+	"image/color"
 	_ "image/jpeg" // Import JPEG decoder
 	"image/png"
 	"os"
@@ -494,8 +511,10 @@ func TestRealGameScreenshots(t *testing.T) {
 	}{
 		{"Day1_test1.jpg", 1, "Game screenshot showing Day 1"},
 		{"Day1_test2.jpg", 1, "Game screenshot showing Day 1"},
+		{"Day1_test3.jpg", 1, "Game screenshot showing Day 1"},
 		{"Day2_test1.jpg", 2, "Game screenshot showing Day 2"},
 		{"Day2_test2.jpg", 2, "Game screenshot showing Day 2"},
+		{"Day2_test3.jpg", 2, "Game screenshot showing Day 2"},
 		{"Day3_test1.jpg", 3, "Game screenshot showing Day 3"},
 	}
 
