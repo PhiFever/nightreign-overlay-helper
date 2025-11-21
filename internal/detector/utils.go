@@ -4,10 +4,37 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
 	"math"
 	"os"
 )
+
+// LoadImageFromFile loads an image from a file (supports PNG and JPEG)
+func LoadImageFromFile(path string) (image.Image, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	// Try PNG first
+	img, err := png.Decode(f)
+	if err == nil {
+		return img, nil
+	}
+
+	// Reset file pointer
+	f.Seek(0, 0)
+
+	// Try JPEG
+	img, err = jpeg.Decode(f)
+	if err != nil {
+		return nil, err
+	}
+
+	return img, nil
+}
 
 // Point 表示一个二维点
 type Point struct {
