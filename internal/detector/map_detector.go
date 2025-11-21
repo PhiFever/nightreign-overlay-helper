@@ -14,11 +14,12 @@ import (
 
 // MapDetector handles map detection and pattern matching
 type MapDetector struct {
-	info          *MapInfo
-	earthMaps     map[int]image.Image
-	earthMapsLock sync.RWMutex
-	enabled       bool
-	mu            sync.RWMutex
+	info           *MapInfo
+	earthMaps      map[int]image.Image
+	earthMapsLock  sync.RWMutex
+	regionDetector *MapRegionDetector
+	enabled        bool
+	mu             sync.RWMutex
 }
 
 // MapDetectResult contains the detection result
@@ -68,9 +69,10 @@ func NewMapDetector() (*MapDetector, error) {
 		len(info.Patterns), len(info.AllPOIPos), len(info.AllPOIConstructs)))
 
 	detector := &MapDetector{
-		info:      info,
-		earthMaps: make(map[int]image.Image),
-		enabled:   true,
+		info:           info,
+		earthMaps:      make(map[int]image.Image),
+		regionDetector: NewMapRegionDetector(),
+		enabled:        true,
 	}
 
 	// Load earth shifting maps (0, 1, 2, 3, 5 - skip 4)
@@ -128,6 +130,7 @@ func (d *MapDetector) Cleanup() error {
 }
 
 // Detect performs map detection on the given image
+// The image can be either a full screen capture or a pre-cropped map region
 func (d *MapDetector) Detect(img image.Image) (interface{}, error) {
 	if !d.IsEnabled() {
 		return nil, nil
@@ -135,8 +138,32 @@ func (d *MapDetector) Detect(img image.Image) (interface{}, error) {
 
 	startTime := time.Now()
 
+	// Determine if this is a full screen or already cropped map
+	bounds := img.Bounds()
+	width, height := bounds.Dx(), bounds.Dy()
+
+	var mapImg image.Image
+	var autoDetected bool
+
+	// If image is very large (likely full screen), try to auto-detect map region
+	if width > StdMapWidth*2 || height > StdMapHeight*2 {
+		logger.Info(fmt.Sprintf("[MapDetector] Input image is %dx%d, attempting auto-detection",
+			width, height))
+		mapImg, autoDetected = d.regionDetector.ExtractMapRegion(img)
+		if autoDetected {
+			logger.Info("[MapDetector] Map region auto-detected successfully")
+		} else {
+			logger.Warning("[MapDetector] Auto-detection used fallback region")
+		}
+	} else {
+		// Image is already map-sized, use directly
+		logger.Debug("[MapDetector] Input image is map-sized, using directly")
+		mapImg = img
+		autoDetected = false
+	}
+
 	// Resize to standard size
-	stdImg := ResizeImage(img, StdMapWidth, StdMapHeight)
+	stdImg := ResizeImage(mapImg, StdMapWidth, StdMapHeight)
 
 	result := &MapDetectResult{}
 
