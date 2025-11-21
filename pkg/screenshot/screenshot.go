@@ -7,30 +7,30 @@ import (
 	"github.com/kbinani/screenshot"
 )
 
-// Capturer provides screen capture functionality
+// Capturer 提供屏幕捕获功能
 type Capturer interface {
-	// CaptureScreen captures the entire screen from the specified display
+	// CaptureScreen 从指定的显示器捕获整个屏幕
 	CaptureScreen(displayIndex int) (image.Image, error)
 
-	// CaptureRegion captures a specific region of the screen
+	// CaptureRegion 捕获屏幕的特定区域
 	CaptureRegion(displayIndex int, x, y, width, height int) (image.Image, error)
 
-	// GetDisplayCount returns the number of available displays
+	// GetDisplayCount 返回可用显示器的数量
 	GetDisplayCount() int
 
-	// GetDisplayBounds returns the bounds of the specified display
+	// GetDisplayBounds 返回指定显示器的边界
 	GetDisplayBounds(displayIndex int) (image.Rectangle, error)
 }
 
-// DefaultCapturer implements screen capture using the screenshot library
+// DefaultCapturer 使用 screenshot 库实现屏幕捕获
 type DefaultCapturer struct{}
 
-// NewCapturer creates a new default screen capturer
+// NewCapturer 创建一个新的默认屏幕捕获器
 func NewCapturer() Capturer {
 	return &DefaultCapturer{}
 }
 
-// CaptureScreen captures the entire screen from the specified display
+// CaptureScreen 从指定的显示器捕获整个屏幕
 func (c *DefaultCapturer) CaptureScreen(displayIndex int) (image.Image, error) {
 	n := screenshot.NumActiveDisplays()
 	if displayIndex < 0 || displayIndex >= n {
@@ -46,17 +46,17 @@ func (c *DefaultCapturer) CaptureScreen(displayIndex int) (image.Image, error) {
 	return img, nil
 }
 
-// CaptureRegion captures a specific region of the screen
+// CaptureRegion 捕获屏幕的特定区域
 func (c *DefaultCapturer) CaptureRegion(displayIndex int, x, y, width, height int) (image.Image, error) {
 	n := screenshot.NumActiveDisplays()
 	if displayIndex < 0 || displayIndex >= n {
 		return nil, fmt.Errorf("invalid display index: %d (available: 0-%d)", displayIndex, n-1)
 	}
 
-	// Create the rectangle for the region
+	// 创建区域的矩形
 	rect := image.Rect(x, y, x+width, y+height)
 
-	// Capture the region
+	// 捕获区域
 	img, err := screenshot.CaptureRect(rect)
 	if err != nil {
 		return nil, fmt.Errorf("failed to capture region: %w", err)
@@ -65,12 +65,12 @@ func (c *DefaultCapturer) CaptureRegion(displayIndex int, x, y, width, height in
 	return img, nil
 }
 
-// GetDisplayCount returns the number of available displays
+// GetDisplayCount 返回可用显示器的数量
 func (c *DefaultCapturer) GetDisplayCount() int {
 	return screenshot.NumActiveDisplays()
 }
 
-// GetDisplayBounds returns the bounds of the specified display
+// GetDisplayBounds 返回指定显示器的边界
 func (c *DefaultCapturer) GetDisplayBounds(displayIndex int) (image.Rectangle, error) {
 	n := screenshot.NumActiveDisplays()
 	if displayIndex < 0 || displayIndex >= n {

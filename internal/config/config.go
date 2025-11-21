@@ -6,20 +6,20 @@ import (
 	"time"
 )
 
-// Config represents the application configuration
+// Config 表示应用程序配置
 type Config struct {
-	// Day/Shrink related
+	// 天数/缩圈相关
 	DayPeriodSeconds      []int   `yaml:"day_period_seconds"`
 	DeadlyNightrainSeconds int     `yaml:"deadly_nightrain_seconds"`
 	ForwardDaySeconds     int     `yaml:"foward_day_seconds"`
 	BackDaySeconds        int     `yaml:"back_day_seconds"`
 	TimeScale             float64 `yaml:"time_scale"`
 
-	// Update intervals
+	// 更新间隔
 	UpdateInterval   float64            `yaml:"update_interval"`
 	DetectIntervals  map[string]float64 `yaml:"detect_intervals"`
 
-	// CSS styles
+	// CSS 样式
 	DayProgressCSS    string `yaml:"day_progress_css"`
 	DayTextCSS        string `yaml:"day_text_css"`
 	InRainProgressCSS string `yaml:"in_rain_progress_css"`
@@ -27,7 +27,7 @@ type Config struct {
 	ArtProgressCSS    string `yaml:"art_progress_css"`
 	ArtTextCSS        string `yaml:"art_text_css"`
 
-	// Day detector settings
+	// 天数检测器设置
 	TemplateStandardHeight int       `yaml:"template_standard_height"`
 	MaskLowerWhite         []int     `yaml:"mask_lower_white"`
 	MaskUpperWhite         []int     `yaml:"mask_upper_white"`
@@ -35,7 +35,7 @@ type Config struct {
 	DayxScoreThreshold     float64   `yaml:"dayx_score_threshold"`
 	DayxDetectLangs        map[string]string `yaml:"dayx_detect_langs"`
 
-	// HP detector settings
+	// HP 检测器设置
 	LowerHLSNotInRain []int   `yaml:"lower_hls_not_in_rain"`
 	UpperHLSNotInRain []int   `yaml:"upper_hls_not_in_rain"`
 	LowerHLSInRain    []int   `yaml:"lower_hls_in_rain"`
@@ -46,7 +46,7 @@ type Config struct {
 	HpColorMinAreaRatio float64 `yaml:"hp_color_min_area_ratio"`
 	HpColorMaxAreaRatio float64 `yaml:"hp_color_max_area_ratio"`
 
-	// HP bar detector settings
+	// HP 条检测器设置
 	HpbarRegionAspectRatio   float64 `yaml:"hpbar_region_aspect_ratio"`
 	HpbarDetectStdHeight     int     `yaml:"hpbar_detect_std_height"`
 	HpbarBorderVPeakStart    int     `yaml:"hpbar_border_v_peak_start"`
@@ -55,7 +55,7 @@ type Config struct {
 	HpbarBorderVPeakInterval int     `yaml:"hpbar_border_v_peak_interval"`
 	HpbarRecentLengthCount   int     `yaml:"hpbar_recent_length_count"`
 
-	// Map detector settings
+	// 地图检测器设置
 	FixedMapOverlayDrawSize   []int   `yaml:"fixed_map_overlay_draw_size"`
 	MapOverlayDrawSizeRatio   float64 `yaml:"map_overlay_draw_size_ratio"`
 	FullMapHoughCircleThres   []int   `yaml:"full_map_hough_circle_thres"`
@@ -63,18 +63,18 @@ type Config struct {
 	EarthShiftingErrorThreshold float64 `yaml:"earth_shifting_error_threshold"`
 	MapPatternMatchInterval   float64 `yaml:"map_pattern_match_interval"`
 
-	// Art detector settings
+	// 技能检测器设置
 	ArtDetectStandardSize  int       `yaml:"art_detect_standard_size"`
 	ArtDetectMatchScales   []float64 `yaml:"art_detect_match_scales"`
 	ArtDetectThreshold     float64   `yaml:"art_detect_threshold"`
 	ArtDetectDelaySeconds  float64   `yaml:"art_detect_delay_seconds"`
 	ArtInfo                map[string]ArtInfo `yaml:"art_info"`
 
-	// Bug report
+	// Bug 报告
 	BugReportEmail string `yaml:"bug_report_email"`
 }
 
-// ArtInfo contains information about an art ability
+// ArtInfo 包含技能能力的信息
 type ArtInfo struct {
 	Delay    float64 `yaml:"delay"`
 	Duration float64 `yaml:"duration"`
@@ -89,7 +89,7 @@ var (
 	lastModTime  time.Time
 )
 
-// Get returns the global configuration, reloading if the file has been modified
+// Get 返回全局配置，如果文件已被修改则重新加载
 func Get() (*Config, error) {
 	configMu.Lock()
 	defer configMu.Unlock()
@@ -112,7 +112,7 @@ func Get() (*Config, error) {
 	return globalConfig, nil
 }
 
-// SetConfigPath sets the path to the configuration file
+// SetConfigPath 设置配置文件的路径
 func SetConfigPath(path string) {
 	configMu.Lock()
 	defer configMu.Unlock()

@@ -7,28 +7,28 @@ import (
 	"github.com/PhiFever/nightreign-overlay-helper/pkg/version"
 )
 
-// GetAssetPath returns the path to an asset file
+// GetAssetPath 返回资源文件的路径
 func GetAssetPath(path string) string {
 	return filepath.Join("assets", path)
 }
 
-// GetDataPath returns the path to a data file
+// GetDataPath 返回数据文件的路径
 func GetDataPath(path string) string {
 	return filepath.Join("data", path)
 }
 
-// GetAppDataPath returns the path to an application data file
+// GetAppDataPath 返回应用程序数据文件的路径
 func GetAppDataPath(filename string) (string, error) {
 	var appDataDir string
 
 	if appData := os.Getenv("APPDATA"); appData != "" {
-		// Windows
+		// Windows 系统
 		appDataDir = filepath.Join(appData, version.AppName)
 	} else if home := os.Getenv("HOME"); home != "" {
-		// Linux/macOS
+		// Linux/macOS 系统
 		appDataDir = filepath.Join(home, ".local", "share", version.AppName)
 	} else {
-		// Fallback
+		// 后备方案
 		appDataDir = version.AppName
 	}
 
@@ -39,7 +39,7 @@ func GetAppDataPath(filename string) (string, error) {
 	return filepath.Join(appDataDir, filename), nil
 }
 
-// GetDesktopPath returns the path to a desktop file
+// GetDesktopPath 返回桌面文件的路径
 func GetDesktopPath(filename string) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -57,7 +57,7 @@ func GetDesktopPath(filename string) (string, error) {
 	return desktop, nil
 }
 
-// GetIconPath returns the path to the icon file
+// GetIconPath 返回图标文件的路径
 func GetIconPath() string {
 	return GetAssetPath("icon.ico")
 }

@@ -7,7 +7,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// LoadYAML loads a YAML file into a map
+// LoadYAML 从 YAML 文件加载数据到 map
 func LoadYAML(path string) (map[string]interface{}, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -22,16 +22,16 @@ func LoadYAML(path string) (map[string]interface{}, error) {
 	return result, nil
 }
 
-// SaveYAML saves a map to a YAML file
-// Uses atomic write (write to temp file then replace) to prevent corruption
+// SaveYAML 将 map 保存到 YAML 文件
+// 使用原子写入（写入临时文件然后替换）以防止损坏
 func SaveYAML(path string, data interface{}) error {
-	// Ensure directory exists
+	// 确保目录存在
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 
-	// Write to temporary file
+	// 写入临时文件
 	tmpPath := path + ".tmp"
 	yamlData, err := yaml.Marshal(data)
 	if err != nil {
@@ -42,9 +42,9 @@ func SaveYAML(path string, data interface{}) error {
 		return err
 	}
 
-	// Atomic replace
+	// 原子替换
 	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath) // Clean up on error
+		os.Remove(tmpPath) // 出错时清理
 		return err
 	}
 

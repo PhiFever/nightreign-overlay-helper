@@ -12,7 +12,7 @@ import (
 	"github.com/PhiFever/nightreign-overlay-helper/internal/logger"
 )
 
-// DetectorResult represents the result from a detector
+// DetectorResult 表示检测器的结果
 type DetectorResult struct {
 	DetectorName string
 	Result       interface{}
@@ -20,36 +20,36 @@ type DetectorResult struct {
 	Timestamp    time.Time
 }
 
-// ScreenCapture is a function type for capturing screen
+// ScreenCapture 是用于捕获屏幕的函数类型
 type ScreenCapture func() (image.Image, error)
 
-// Updater coordinates all detectors and manages the detection loop
+// Updater 协调所有检测器并管理检测循环
 type Updater struct {
 	config   *config.Config
 	registry *detector.DetectorRegistry
 
-	// Channels
+	// 通道
 	resultChan chan DetectorResult
 	stopChan   chan struct{}
 	doneChan   chan struct{}
 
-	// Screen capture function
+	// 屏幕捕获函数
 	captureFunc ScreenCapture
 
-	// State
+	// 状态
 	running bool
 	mu      sync.RWMutex
 
-	// Statistics
+	// 统计信息
 	updateCount    uint64
 	lastUpdateTime time.Time
 
-	// Cache for last results to avoid duplicate logging
+	// 缓存最后的结果以避免重复日志
 	lastResults map[string]string
 	resultsMu   sync.Mutex
 }
 
-// NewUpdater creates a new updater
+// NewUpdater 创建一个新的更新器
 func NewUpdater(cfg *config.Config, registry *detector.DetectorRegistry) *Updater {
 	return &Updater{
 		config:      cfg,
@@ -57,17 +57,17 @@ func NewUpdater(cfg *config.Config, registry *detector.DetectorRegistry) *Update
 		resultChan:  make(chan DetectorResult, 100),
 		stopChan:    make(chan struct{}),
 		doneChan:    make(chan struct{}),
-		captureFunc: mockCapture, // Use mock capture for now
+		captureFunc: mockCapture, // 暂时使用模拟捕获
 		lastResults: make(map[string]string),
 	}
 }
 
-// SetCaptureFunc sets the screen capture function
+// SetCaptureFunc 设置屏幕捕获函数
 func (u *Updater) SetCaptureFunc(fn ScreenCapture) {
 	u.captureFunc = fn
 }
 
-// Start starts the updater loop
+// Start 启动更新器循环
 func (u *Updater) Start(ctx context.Context) error {
 	u.mu.Lock()
 	if u.running {
@@ -79,17 +79,17 @@ func (u *Updater) Start(ctx context.Context) error {
 
 	logger.Info("[Updater] Starting...")
 
-	// Start result processor
+	// 启动结果处理器
 	go u.processResults(ctx)
 
-	// Start detection loop
+	// 启动检测循环
 	go u.detectionLoop(ctx)
 
 	logger.Info("[Updater] Started successfully")
 	return nil
 }
 
-// Stop stops the updater
+// Stop 停止更新器
 func (u *Updater) Stop() error {
 	u.mu.Lock()
 	if !u.running {
@@ -101,29 +101,29 @@ func (u *Updater) Stop() error {
 
 	logger.Info("[Updater] Stopping...")
 
-	// Signal stop
+	// 发送停止信号
 	close(u.stopChan)
 
-	// Wait for done
+	// 等待完成
 	<-u.doneChan
 
 	logger.Info("[Updater] Stopped successfully")
 	return nil
 }
 
-// IsRunning returns whether the updater is running
+// IsRunning 返回更新器是否正在运行
 func (u *Updater) IsRunning() bool {
 	u.mu.RLock()
 	defer u.mu.RUnlock()
 	return u.running
 }
 
-// GetResultChan returns the result channel
+// GetResultChan 返回结果通道
 func (u *Updater) GetResultChan() <-chan DetectorResult {
 	return u.resultChan
 }
 
-// detectionLoop runs the main detection loop
+// detectionLoop 运行主检测循环
 func (u *Updater) detectionLoop(ctx context.Context) {
 	defer close(u.doneChan)
 
@@ -149,19 +149,19 @@ func (u *Updater) detectionLoop(ctx context.Context) {
 	}
 }
 
-// runDetection runs all enabled detectors
+// runDetection 运行所有启用的检测器
 func (u *Updater) runDetection() {
-	// Capture screen
+	// 捕获屏幕
 	img, err := u.captureFunc()
 	if err != nil {
 		logger.Errorf("[Updater] Failed to capture screen: %v", err)
 		return
 	}
 
-	// Get all detectors
+	// 获取所有检测器
 	detectors := u.registry.GetAll()
 
-	// Run detectors concurrently
+	// 并发运行检测器
 	var wg sync.WaitGroup
 	for _, d := range detectors {
 		if !d.IsEnabled() {
@@ -174,7 +174,7 @@ func (u *Updater) runDetection() {
 
 			result, err := det.Detect(img)
 
-			// Send result
+			// 发送结果
 			select {
 			case u.resultChan <- DetectorResult{
 				DetectorName: det.Name(),
@@ -183,21 +183,21 @@ func (u *Updater) runDetection() {
 				Timestamp:    time.Now(),
 			}:
 			default:
-				// Channel is full, skip
+				// 通道已满，跳过
 				logger.Warningf("[Updater] Result channel full, dropping result from %s", det.Name())
 			}
 		}(d)
 	}
 
-	// Wait for all detectors to complete
+	// 等待所有检测器完成
 	wg.Wait()
 
-	// Update statistics
+	// 更新统计信息
 	u.updateCount++
 	u.lastUpdateTime = time.Now()
 }
 
-// processResults processes detector results
+// processResults 处理检测器结果
 func (u *Updater) processResults(ctx context.Context) {
 	logger.Info("[Updater] Result processor started")
 
@@ -217,17 +217,17 @@ func (u *Updater) processResults(ctx context.Context) {
 	}
 }
 
-// handleResult handles a single detector result
+// handleResult 处理单个检测器结果
 func (u *Updater) handleResult(result DetectorResult) {
 	if result.Error != nil {
 		logger.Errorf("[Updater] Detector %s error: %v", result.DetectorName, result.Error)
 		return
 	}
 
-	// Convert result to string for comparison
+	// 将结果转换为字符串以进行比较
 	resultStr := fmt.Sprintf("%v", result.Result)
 
-	// Check if result has changed
+	// 检查结果是否已更改
 	u.resultsMu.Lock()
 	lastResult, exists := u.lastResults[result.DetectorName]
 	shouldLog := !exists || lastResult != resultStr
@@ -236,15 +236,15 @@ func (u *Updater) handleResult(result DetectorResult) {
 	}
 	u.resultsMu.Unlock()
 
-	// Only log if result changed
+	// 仅在结果更改时记录日志
 	if shouldLog {
 		logger.Infof("[Updater] %s: %v", result.DetectorName, result.Result)
 	}
 
-	// TODO: Update UI with result
+	// TODO: 使用结果更新 UI
 }
 
-// GetStatistics returns updater statistics
+// GetStatistics 返回更新器统计信息
 func (u *Updater) GetStatistics() map[string]interface{} {
 	u.mu.RLock()
 	defer u.mu.RUnlock()
@@ -256,9 +256,9 @@ func (u *Updater) GetStatistics() map[string]interface{} {
 	}
 }
 
-// mockCapture is a mock screen capture function for testing
+// mockCapture 是用于测试的模拟屏幕捕获函数
 func mockCapture() (image.Image, error) {
-	// Return a dummy 1x1 image
+	// 返回一个虚拟的 1x1 图像
 	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
 	return img, nil
 }
