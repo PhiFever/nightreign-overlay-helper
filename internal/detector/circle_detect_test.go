@@ -221,7 +221,7 @@ func TestVariance(t *testing.T) {
 	t.Logf("Variance of [1,2,3,4,5]: %.4f", v)
 
 	// Test 3: Empty slice
-	empty := []float64{}
+	var empty []float64
 	v = variance(empty)
 	assert.Equal(t, 0.0, v, "Empty slice should have 0 variance")
 }

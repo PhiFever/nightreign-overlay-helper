@@ -120,7 +120,7 @@ func GetPresetRegionsForResolution(width, height int) []Rect {
 	// These are typical map positions for different resolutions
 	// Format: X, Y, Width, Height (as percentages that will be converted)
 
-	presets := []Rect{}
+	var presets []Rect
 
 	// Preset 1: Centered with 15% margin
 	presets = append(presets, NewRect(

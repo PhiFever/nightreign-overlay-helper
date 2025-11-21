@@ -493,7 +493,7 @@ func HasBrightPixels(img image.Image, region Rect, threshold float64, sampleStep
 // FindCandidateRegions 使用基于颜色的过滤查找潜在的文本区域
 // 这比模板匹配快得多，可以缩小搜索区域
 func FindCandidateRegions(img image.Image, windowWidth, windowHeight, stepSize int, brightThreshold float64) []Rect {
-	candidates := []Rect{}
+	var candidates []Rect
 	bounds := img.Bounds()
 
 	// 使用滑动窗口扫描图像

@@ -25,7 +25,7 @@ func TestDetectMapRegionWithFallback(t *testing.T) {
 	// Fill with gray
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
-			img.Set(x, y, color.RGBA{128, 128, 128, 255})
+			img.Set(x, y, color.RGBA{R: 128, G: 128, B: 128, A: 255})
 		}
 	}
 
@@ -143,7 +143,7 @@ func createTestFullScreenWithMinimap(width, height int) image.Image {
 	// Fill background
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
-			img.Set(x, y, color.RGBA{50, 50, 50, 255})
+			img.Set(x, y, color.RGBA{R: 50, G: 50, B: 50, A: 255})
 		}
 	}
 
@@ -156,7 +156,7 @@ func createTestFullScreenWithMinimap(width, height int) image.Image {
 	for y := mapY; y < mapY+mapH; y++ {
 		for x := mapX; x < mapX+mapW; x++ {
 			c := uint8((x+y)%200 + 50)
-			img.Set(x, y, color.RGBA{c, c + 10, c + 20, 255})
+			img.Set(x, y, color.RGBA{R: c, G: c + 10, B: c + 20, A: 255})
 		}
 	}
 
@@ -176,7 +176,7 @@ func createTestFullScreenWithMinimap(width, height int) image.Image {
 
 				// Circle edge with multiple pixels thickness
 				if dist >= r*r && dist <= (r+1)*(r+1) {
-					img.Set(x, y, color.RGBA{255, 255, 255, 255})
+					img.Set(x, y, color.RGBA{R: 255, G: 255, B: 255, A: 255})
 				}
 			}
 		}
