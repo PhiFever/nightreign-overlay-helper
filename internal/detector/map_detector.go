@@ -87,12 +87,36 @@ func NewMapDetector() (*MapDetector, error) {
 func (d *MapDetector) loadEarthMaps() error {
 	earthIDs := []int{0, 1, 2, 3, 5} // Skip 4 as per Python code
 
+	// 地形名称映射（用于支持中文命名的地形文件）
+	earthNames := map[int]string{
+		0: "普通",
+		1: "雪山",
+		2: "火山",
+		3: "腐败",
+		5: "隐城",
+	}
+
 	for _, id := range earthIDs {
-		path := utils.GetDataPath(filepath.Join("maps", fmt.Sprintf("%d.jpg", id)))
-		img, err := LoadImageFromFile(path)
+		// 首先尝试加载带中文名称的文件（新格式）
+		var path string
+		var img image.Image
+		var err error
+
+		if name, ok := earthNames[id]; ok {
+			path = utils.GetDataPath(filepath.Join("maps", fmt.Sprintf("%d_%s.jpg", id, name)))
+			img, err = LoadImageFromFile(path)
+		}
+
+		// 如果新格式不存在，尝试旧格式（向后兼容）
+		if err != nil {
+			path = utils.GetDataPath(filepath.Join("maps", fmt.Sprintf("%d.jpg", id)))
+			img, err = LoadImageFromFile(path)
+		}
+
 		if err != nil {
 			return fmt.Errorf("failed to load earth map %d: %w", id, err)
 		}
+
 		d.earthMaps[id] = img
 		logger.Debug(fmt.Sprintf("Loaded earth map %d from %s", id, path))
 	}

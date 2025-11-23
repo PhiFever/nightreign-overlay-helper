@@ -4,6 +4,7 @@ import (
 	"image"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/PhiFever/nightreign-overlay-helper/pkg/utils"
@@ -12,6 +13,32 @@ import (
 
 // 实际游戏截图测试套件
 // 测试文件应放置在 data/test/map_detector/ 目录下
+
+// 地形名称到 ID 的映射
+var earthShiftingNameMap = map[string]int{
+	"普通": 0,
+	"雪山": 1,
+	"火山": 2,
+	"腐败": 3,
+	"隐城": 5,
+}
+
+// 从文件名提取地形类型
+func extractEarthShiftingFromFilename(filename string) (int, bool) {
+	for name, id := range earthShiftingNameMap {
+		if strings.Contains(filename, name) {
+			return id, true
+		}
+	}
+	return -1, false
+}
+
+// 判断文件名是否表示全屏截图
+func isFullScreenImage(filename string) bool {
+	return strings.Contains(filename, "全屏") ||
+		strings.Contains(filename, "fullscreen") ||
+		strings.Contains(filename, "full")
+}
 
 // TestMapDetectorWithRealScreenshots 使用实际游戏截图测试完整的地图检测流程
 func TestMapDetectorWithRealScreenshots(t *testing.T) {
@@ -69,6 +96,12 @@ func testMapDetectionWithScreenshot(t *testing.T, detector *MapDetector, testDir
 	bounds := img.Bounds()
 	t.Logf("图片尺寸: %dx%d", bounds.Dx(), bounds.Dy())
 
+	// 尝试从文件名提取期望的地形类型
+	expectedEarth, hasExpected := extractEarthShiftingFromFilename(filename)
+	if hasExpected {
+		t.Logf("期望地形: %d (从文件名识别)", expectedEarth)
+	}
+
 	// 执行地图检测
 	result, err := detector.Detect(img)
 	if err != nil {
@@ -89,7 +122,17 @@ func testMapDetectionWithScreenshot(t *testing.T, detector *MapDetector, testDir
 	}
 
 	// 输出检测结果
-	t.Logf("地形类型: %d (分数: %.4f)", mapResult.EarthShifting, mapResult.EarthShiftingScore)
+	t.Logf("检测地形: %d (分数: %.4f)", mapResult.EarthShifting, mapResult.EarthShiftingScore)
+
+	// 如果有期望值，进行验证
+	if hasExpected {
+		if mapResult.EarthShifting == expectedEarth {
+			t.Logf("✓ 地形检测正确！")
+		} else {
+			t.Errorf("✗ 地形检测错误: 期望 %d, 实际 %d", expectedEarth, mapResult.EarthShifting)
+		}
+	}
+
 	if mapResult.Pattern != nil {
 		t.Logf("匹配的地图模式: #%d", mapResult.Pattern.ID)
 		t.Logf("  - 地形: %d", mapResult.Pattern.EarthShifting)
@@ -112,7 +155,7 @@ func TestMapRegionDetectionWithRealScreenshots(t *testing.T) {
 		return
 	}
 
-	// 过滤全屏截图（通常是较大的图片）
+	// 过滤全屏截图
 	fullScreenImages := []string{}
 	for _, file := range files {
 		if file.IsDir() {
@@ -120,16 +163,18 @@ func TestMapRegionDetectionWithRealScreenshots(t *testing.T) {
 		}
 		name := file.Name()
 		ext := filepath.Ext(name)
-		// 查找包含 "fullscreen" 或 "full" 的图片
-		if (ext == ".png" || ext == ".jpg" || ext == ".jpeg") {
+		// 查找包含 "全屏"、"fullscreen" 或 "full" 的图片
+		if (ext == ".png" || ext == ".jpg" || ext == ".jpeg") && isFullScreenImage(name) {
 			fullScreenImages = append(fullScreenImages, name)
 		}
 	}
 
 	if len(fullScreenImages) == 0 {
-		t.Skip("没有找到全屏截图")
+		t.Skip("没有找到全屏截图（文件名应包含'全屏'或'fullscreen'）")
 		return
 	}
+
+	t.Logf("找到 %d 个全屏截图", len(fullScreenImages))
 
 	regionDetector := NewMapRegionDetector()
 
@@ -208,20 +253,36 @@ func testMapRegionDetection(t *testing.T, detector *MapRegionDetector, testDir, 
 // TestEarthShiftingDetectionAccuracy 测试地形检测准确率
 func TestEarthShiftingDetectionAccuracy(t *testing.T) {
 	testDir := utils.GetDataPath("test/map_detector")
+	files, err := os.ReadDir(testDir)
+	if err != nil {
+		t.Skipf("测试目录不存在: %s", testDir)
+		return
+	}
 
-	// 定义已知地形的测试用例
-	// 格式: 文件名 -> 期望的地形ID
-	knownEarthShifting := map[string]int{
-		// 示例：用户需要根据实际截图添加
-		// "map_earth0.png": 0,
-		// "map_earth1.png": 1,
-		// "map_earth2.png": 2,
+	// 自动从文件名构建已知地形的测试用例
+	knownEarthShifting := make(map[string]int)
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+		filename := file.Name()
+		ext := filepath.Ext(filename)
+		if ext != ".png" && ext != ".jpg" && ext != ".jpeg" {
+			continue
+		}
+
+		// 从文件名提取地形类型
+		if earthID, ok := extractEarthShiftingFromFilename(filename); ok {
+			knownEarthShifting[filename] = earthID
+		}
 	}
 
 	if len(knownEarthShifting) == 0 {
-		t.Skip("没有配置已知地形的测试用例")
+		t.Skip("没有找到包含地形名称的测试图片（支持：普通、雪山、火山、腐败、隐城）")
 		return
 	}
+
+	t.Logf("找到 %d 个包含已知地形标签的测试图片", len(knownEarthShifting))
 
 	detector, err := NewMapDetector()
 	if err != nil {
@@ -231,15 +292,12 @@ func TestEarthShiftingDetectionAccuracy(t *testing.T) {
 	correctCount := 0
 	totalCount := 0
 
+	// 按地形分组统计
+	earthStats := make(map[int]struct{ correct, total int })
+
 	for filename, expectedEarth := range knownEarthShifting {
 		t.Run(filename, func(t *testing.T) {
 			filePath := filepath.Join(testDir, filename)
-
-			// 检查文件是否存在
-			if _, err := os.Stat(filePath); os.IsNotExist(err) {
-				t.Skipf("文件不存在: %s", filename)
-				return
-			}
 
 			// 加载图片
 			img, err := LoadImageFromFile(filePath)
@@ -258,21 +316,38 @@ func TestEarthShiftingDetectionAccuracy(t *testing.T) {
 			detected := mapResult.EarthShifting
 
 			totalCount++
+			stats := earthStats[expectedEarth]
+			stats.total++
+
 			if detected == expectedEarth {
 				correctCount++
+				stats.correct++
 				t.Logf("✓ 正确: 期望 %d, 检测到 %d (分数: %.4f)",
 					expectedEarth, detected, mapResult.EarthShiftingScore)
 			} else {
 				t.Errorf("✗ 错误: 期望 %d, 但检测到 %d (分数: %.4f)",
 					expectedEarth, detected, mapResult.EarthShiftingScore)
 			}
+
+			earthStats[expectedEarth] = stats
 		})
 	}
 
 	// 输出总体准确率
 	if totalCount > 0 {
 		accuracy := float64(correctCount) / float64(totalCount) * 100
-		t.Logf("\n地形检测准确率: %.1f%% (%d/%d)", accuracy, correctCount, totalCount)
+		t.Logf("\n=== 地形检测准确率统计 ===")
+		t.Logf("总体准确率: %.1f%% (%d/%d)", accuracy, correctCount, totalCount)
+
+		// 输出各地形的准确率
+		earthNames := map[int]string{0: "普通", 1: "雪山", 2: "火山", 3: "腐败", 5: "隐城"}
+		for earthID := 0; earthID <= 5; earthID++ {
+			if stats, ok := earthStats[earthID]; ok && stats.total > 0 {
+				acc := float64(stats.correct) / float64(stats.total) * 100
+				t.Logf("  %s(ID=%d): %.1f%% (%d/%d)",
+					earthNames[earthID], earthID, acc, stats.correct, stats.total)
+			}
+		}
 	}
 }
 
