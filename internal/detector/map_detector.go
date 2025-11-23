@@ -5,6 +5,7 @@ import (
 	"image"
 	"math"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -267,12 +268,18 @@ func (d *MapDetector) detectEarthShifting(img image.Image) (int, float64, error)
 	}()
 
 	// Collect results
+	allScores := make(map[int]float64)
 	for res := range results {
+		allScores[res.mapID] = res.score
 		if res.score < bestScore {
 			bestScore = res.score
 			bestMapID = res.mapID
 		}
 	}
+
+	// Log all scores for debugging
+	logger.Info(fmt.Sprintf("[MapDetector] Earth shifting scores: 0=%.4f, 1=%.4f, 2=%.4f, 3=%.4f, 5=%.4f",
+		allScores[0], allScores[1], allScores[2], allScores[3], allScores[5]))
 
 	logger.Info(fmt.Sprintf("[MapDetector] Earth shifting detection: best map %d, score %.4f, time %.3fs",
 		bestMapID, bestScore, time.Since(startTime).Seconds()))
@@ -416,23 +423,18 @@ func median(values []float64) float64 {
 		return 0
 	}
 
-	// Simple median calculation (not sorting, using approximate)
-	// For performance, we use a simple average of min/max/mean
-	sum := 0.0
-	min := values[0]
-	max := values[0]
+	// Make a copy to avoid modifying the original slice
+	sorted := make([]float64, len(values))
+	copy(sorted, values)
 
-	for _, v := range values {
-		sum += v
-		if v < min {
-			min = v
-		}
-		if v > max {
-			max = v
-		}
+	// Sort the values
+	sort.Float64s(sorted)
+
+	n := len(sorted)
+	if n%2 == 0 {
+		// Even number of elements: average of two middle values
+		return (sorted[n/2-1] + sorted[n/2]) / 2.0
 	}
-
-	mean := sum / float64(len(values))
-	// Approximate median as weighted average
-	return (min + mean + max) / 3.0
+	// Odd number of elements: middle value
+	return sorted[n/2]
 }

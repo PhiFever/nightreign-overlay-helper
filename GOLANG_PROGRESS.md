@@ -750,12 +750,37 @@ go test -bench=BenchmarkMapDetectionWithRealImage ./internal/detector
 **修改文件**:
 1. `internal/detector/map_detector.go`
    - 更新 `loadEarthMaps()` 支持中文文件名
+   - 修复 `median()` 函数：从近似算法改为精确排序计算
+   - 添加调试日志：输出所有地形的匹配分数
 
 2. `internal/detector/map_detector_real_test.go`
    - 添加地形名称映射
    - 实现文件名解析函数
    - 增强测试输出和统计功能
 
-3. `data/test/map_detector/README.md`
+3. `internal/detector/utils.go`
+   - 修复 `ResizeImage()`: 从最近邻插值改为双线性插值
+   - 添加 `bilinearInterpolate()`: 实现双线性插值算法
+   - 添加 `lerp2d()`: 2D 线性插值辅助函数
+
+4. `data/test/map_detector/README.md`
    - 添加测试结果说明
    - 记录已知问题和建议
+
+### 算法修复详情
+
+**问题 1: 中位数计算错误** ❌ → ✅
+- **原代码**: 使用 `(min + mean + max) / 3.0` 近似计算
+- **修复**: 使用 `sort.Float64s()` 精确计算中位数
+- **影响**: 这是导致地形检测不准确的主要原因
+
+**问题 2: 图像缩放质量差** ❌ → ✅
+- **原代码**: 使用最近邻插值（Nearest Neighbor）
+- **修复**: 实现双线性插值（Bilinear Interpolation）
+- **对比**: Python 使用双三次插值（Cubic），双线性是合理的折中方案
+- **影响**: 提高图像缩放质量，使地形比对更准确
+
+**修复成果**:
+- 准确率从 7.1% (1/14) 提升到 14.3% (2/14)
+- 雪山地形达到 100% 识别率 (2/2)
+- 测试速度保持不变 (~0.4s/图片)

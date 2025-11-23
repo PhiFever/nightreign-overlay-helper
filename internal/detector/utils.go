@@ -83,7 +83,7 @@ func CropImage(img image.Image, rect Rect) image.Image {
 }
 
 // ResizeImage 将图像调整到指定的宽度和高度
-// 为简单起见使用最近邻插值
+// 使用双线性插值以获得更好的质量（类似于 cv2.INTER_CUBIC）
 func ResizeImage(img image.Image, width, height int) image.Image {
 	bounds := img.Bounds()
 	srcWidth := bounds.Dx()
@@ -93,17 +93,80 @@ func ResizeImage(img image.Image, width, height int) image.Image {
 
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
-			// 计算源坐标
-			srcX := x * srcWidth / width
-			srcY := y * srcHeight / height
+			// 计算源坐标（浮点数）
+			srcX := float64(x) * float64(srcWidth) / float64(width)
+			srcY := float64(y) * float64(srcHeight) / float64(height)
 
-			// 从源图像获取颜色
-			c := img.At(bounds.Min.X+srcX, bounds.Min.Y+srcY)
+			// 双线性插值
+			c := bilinearInterpolate(img, srcX, srcY)
 			resized.Set(x, y, c)
 		}
 	}
 
 	return resized
+}
+
+// bilinearInterpolate 对图像进行双线性插值
+func bilinearInterpolate(img image.Image, x, y float64) color.Color {
+	bounds := img.Bounds()
+
+	// 获取四个最近的像素坐标
+	x0 := int(math.Floor(x))
+	y0 := int(math.Floor(y))
+	x1 := x0 + 1
+	y1 := y0 + 1
+
+	// 边界检查
+	if x0 < bounds.Min.X {
+		x0 = bounds.Min.X
+	}
+	if y0 < bounds.Min.Y {
+		y0 = bounds.Min.Y
+	}
+	if x1 >= bounds.Max.X {
+		x1 = bounds.Max.X - 1
+	}
+	if y1 >= bounds.Max.Y {
+		y1 = bounds.Max.Y - 1
+	}
+
+	// 计算插值权重
+	wx := x - float64(x0)
+	wy := y - float64(y0)
+
+	// 获取四个像素的颜色
+	c00 := img.At(x0, y0)
+	c10 := img.At(x1, y0)
+	c01 := img.At(x0, y1)
+	c11 := img.At(x1, y1)
+
+	// 转换为 RGBA
+	r00, g00, b00, a00 := c00.RGBA()
+	r10, g10, b10, a10 := c10.RGBA()
+	r01, g01, b01, a01 := c01.RGBA()
+	r11, g11, b11, a11 := c11.RGBA()
+
+	// 双线性插值计算
+	r := lerp2d(float64(r00), float64(r10), float64(r01), float64(r11), wx, wy)
+	g := lerp2d(float64(g00), float64(g10), float64(g01), float64(g11), wx, wy)
+	b := lerp2d(float64(b00), float64(b10), float64(b01), float64(b11), wx, wy)
+	a := lerp2d(float64(a00), float64(a10), float64(a01), float64(a11), wx, wy)
+
+	return color.RGBA{
+		R: uint8(uint32(r) >> 8),
+		G: uint8(uint32(g) >> 8),
+		B: uint8(uint32(b) >> 8),
+		A: uint8(uint32(a) >> 8),
+	}
+}
+
+// lerp2d 执行 2D 线性插值
+func lerp2d(c00, c10, c01, c11, wx, wy float64) float64 {
+	// 先在 x 方向插值
+	c0 := c00*(1-wx) + c10*wx
+	c1 := c01*(1-wx) + c11*wx
+	// 再在 y 方向插值
+	return c0*(1-wy) + c1*wy
 }
 
 // RGB2Gray 将 RGB 图像转换为灰度图
