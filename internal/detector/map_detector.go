@@ -379,6 +379,11 @@ func extractRGBROI(arr [][][3]float64, x, y, w, h int) [][][3]float64 {
 }
 
 // calculateImageDifference calculates the median difference between two RGB arrays
+// Following Python implementation exactly:
+//   diff = np.abs((img_roi - map_shifted))
+//   diff[diff > 100] = 0
+//   diff = np.linalg.norm(diff, axis=2)
+//   cur_score = np.median(diff)
 func calculateImageDifference(img1, img2 [][][3]float64) float64 {
 	h := len(img1)
 	if h == 0 || h != len(img2) {
@@ -395,19 +400,26 @@ func calculateImageDifference(img1, img2 [][][3]float64) float64 {
 
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
+			// Calculate absolute difference for each channel
 			diff := [3]float64{
-				img1[y][x][0] - img2[y][x][0],
-				img1[y][x][1] - img2[y][x][1],
-				img1[y][x][2] - img2[y][x][2],
+				math.Abs(img1[y][x][0] - img2[y][x][0]),
+				math.Abs(img1[y][x][1] - img2[y][x][1]),
+				math.Abs(img1[y][x][2] - img2[y][x][2]),
 			}
 
-			// L2 norm
+			// Threshold at 100 BEFORE calculating norm (as per Python code)
+			if diff[0] > 100 {
+				diff[0] = 0
+			}
+			if diff[1] > 100 {
+				diff[1] = 0
+			}
+			if diff[2] > 100 {
+				diff[2] = 0
+			}
+
+			// Now calculate L2 norm
 			norm := math.Sqrt(diff[0]*diff[0] + diff[1]*diff[1] + diff[2]*diff[2])
-
-			// Threshold at 100 (as per Python code)
-			if norm > 100 {
-				norm = 0
-			}
 
 			diffs = append(diffs, norm)
 		}
