@@ -10,7 +10,7 @@ from PyQt6.QtGui import QColor
 from src.common import APP_FULLNAME, APP_AUTHOR
 from src.config import Config
 from src.logger import info, warning, error
-from src.ui.utils import set_widget_always_on_top
+# No longer need set_widget_always_on_top - using Qt.WindowStaysOnTopHint
 
 
 INITIAL_TEXT = f"{APP_FULLNAME} (右键打开菜单)"
@@ -60,7 +60,6 @@ class OverlayWidget(QWidget):
             Qt.WindowType.Tool 
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        set_widget_always_on_top(self)
         self.startTimer(50)
 
         self.scale = 1.0

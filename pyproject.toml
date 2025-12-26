@@ -16,9 +16,22 @@ dependencies = [
     "pyinstaller>=6",
     "pynput>=1",
     "pyqt6>=6",
-    "pywin32>=311",
     "pyyaml>=6",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["*/tests/*", "*/__pycache__/*"]
 
 [[tool.uv.index]]
 url = "https://mirrors.cloud.tencent.com/pypi/simple/"

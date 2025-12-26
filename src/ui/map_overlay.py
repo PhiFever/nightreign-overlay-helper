@@ -16,7 +16,7 @@ import glob
 from src.common import get_readable_timedelta, get_data_path, load_yaml
 from src.config import Config
 from src.logger import info, warning, error
-from src.ui.utils import set_widget_always_on_top, is_window_in_foreground, mss_region_to_qt_region
+from src.ui.utils import is_window_in_foreground, mss_region_to_qt_region
 from src.detector.utils import draw_text
 
 
@@ -50,7 +50,6 @@ class MapOverlayWidget(QWidget):
             Qt.WindowType.WindowTransparentForInput
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        set_widget_always_on_top(self)
         self.startTimer(50)
 
         # 悬浮地图信息

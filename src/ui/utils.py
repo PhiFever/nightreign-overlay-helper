@@ -3,32 +3,21 @@ from PyQt6.QtCore import Qt
 from src.logger import info, warning, error
 
 
-def set_widget_always_on_top(widget: QWidget):
-    try:
-        import win32gui
-        import win32con
-        hwnd = widget.winId().__int__()
-        win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 
-                                0, 0, 0, 0, 
-                                win32con.SWP_NOSIZE | win32con.SWP_NOMOVE)
-        info(f"Window HWND: {hwnd} set to TOPMOST.")
-    except Exception as e:
-        warning(f"Error setting system always on top: {e}")
-
-
 def is_window_in_foreground(window_title: str) -> bool:
     """
-    检查包含特定标题的窗口是否在 Windows 的最前面。
+    检查应用是否有激活的窗口（跨平台）。
+
+    Args:
+        window_title: 窗口标题（保留参数以兼容现有代码）
+
+    Returns:
+        bool: 应用是否有激活窗口
     """
     try:
-        import win32gui
-        import time
-        active_window_handle = win32gui.GetForegroundWindow()
-        active_window_title = win32gui.GetWindowText(active_window_handle)
-        if window_title.lower() in active_window_title.lower():
-            return True
-        return False
+        app = QApplication.instance()
+        return app is not None and app.activeWindow() is not None
     except Exception as e:
+        warning(f"Error checking window state: {e}")
         return False
 
 
