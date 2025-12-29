@@ -54,15 +54,28 @@ if __name__ == "__main__":
     info("=" * 40)
     info(f"Starting app v{APP_VERSION}...")
 
+    # Single instance check - MUST happen before QApplication creation
+    from src.single_instance import SingleInstanceGuard
+
+    instance_guard = SingleInstanceGuard("nightreign-overlay-helper")
+
+    if not instance_guard.is_primary_instance():
+        # Another instance is already running
+        info("Another instance is already running. Exiting...")
+        sys.exit(0)
+
     QApplication.setAttribute(Qt.ApplicationAttribute.AA_Use96Dpi)
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
 
     app = QApplication(sys.argv)
 
     log_system_and_screen_info(app)
-    
+
     # 防止因没有窗口而导致程序退出
     app.setQuitOnLastWindowClosed(False)
+
+    # Setup IPC server to receive activation requests from new instances
+    instance_guard.setup_ipc_server()
 
     # 创建对象
     input = InputWorker()
@@ -92,7 +105,34 @@ if __name__ == "__main__":
     menu.addSeparator()
     tray_icon.setContextMenu(menu)
     tray_icon.show()
-    
+
+    # Window activation callback for when new instance tries to start
+    def activate_window(message):
+        """Activate window when another instance tries to start"""
+        info(f"Activating window due to new instance detection: {message}")
+
+        # Check if settings window is visible
+        if settings_window and settings_window.isVisible():
+            # Restore from minimized state if needed
+            if settings_window.isMinimized():
+                settings_window.showNormal()
+
+            # Bring window to front
+            settings_window.show()
+            settings_window.raise_()
+            settings_window.activateWindow()
+        else:
+            # No window visible - show tray notification
+            tray_icon.showMessage(
+                APP_FULLNAME,
+                "程序已在运行",
+                QSystemTrayIcon.MessageIcon.Information,
+                2000
+            )
+
+    # Connect instance_started signal to activation callback
+    instance_guard.instance_started.connect(activate_window)
+
     def show_menu_at_cursor_pos():
         cursor_pos = QCursor.pos()
         menu.move(cursor_pos)
@@ -146,16 +186,27 @@ if __name__ == "__main__":
 
         tray_icon.deleteLater()
 
+        # Cleanup single instance guard
+        instance_guard.cleanup()
+
     app.aboutToQuit.connect(on_quit)
     
     overlay.show()
 
     try:
-        exit_code = app.exec() 
+        exit_code = app.exec()
         info(f"QApp event loop finished with exit code {exit_code}.")
     except Exception as e:
         exit_code = 1
         error(f"Exception in app exec: {e}")
+    finally:
+        # Ensure cleanup happens even if exception occurs
+        # Note: on_quit handler already calls instance_guard.cleanup()
+        # This is a safety fallback in case on_quit doesn't run
+        try:
+            instance_guard.cleanup()
+        except Exception as cleanup_error:
+            error(f"Error during cleanup: {cleanup_error}")
 
     settings_window.save_settings()
 

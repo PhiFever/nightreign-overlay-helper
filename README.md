@@ -33,6 +33,8 @@ Nightreign Overlay Helper is a utility program developed with PyQt6, designed to
 ## Usage
 Double-click `nightreign-overlay-helper.exe` to run the program. Right-click the overlay window or the taskbar icon to open the menu and access the settings window. Refer to the help in the settings UI for configuration guidance.
 
+**Note**: Only one instance of the program can run at a time per user. If you try to start the program while it's already running, the existing instance will be activated instead.
+
 ## Safety
 The program recognizes game information by capturing screenshots of the game screen, without modifying game data or reading/writing to game memory.
 
@@ -80,6 +82,8 @@ The program recognizes game information by capturing screenshots of the game scr
 ## 使用方法
 
 双击 nightreign-overlay-helper.exe 运行程序，直接右键悬浮窗或右键任务栏图标打开菜单打开设置窗口，参考设置界面中的帮助进行配置。
+
+**注意**：程序对每个用户限制只能运行一个实例。如果程序已经在运行时再次启动，会自动激活已有的实例窗口。
 
 ## 安全性
 
