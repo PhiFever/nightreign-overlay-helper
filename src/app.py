@@ -1,6 +1,10 @@
 import sys
 import time
 import os
+import win32event
+import win32api
+import win32gui
+import winerror
 from PyQt6.QtCore import QThread, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon, QAction, QCursor
 from PyQt6.QtWidgets import (
@@ -15,6 +19,9 @@ from src.ui.settings import SettingsWindow
 from src.updater import Updater
 from src.common import APP_FULLNAME, APP_VERSION, ICON_PATH
 from src.logger import info, warning, error
+
+# 模块级变量，防止 Mutex 句柄被垃圾回收释放
+_singleton_mutex = None
 
 
 def log_system_and_screen_info(app: QApplication):
@@ -53,6 +60,22 @@ def log_system_and_screen_info(app: QApplication):
 if __name__ == "__main__":
     info("=" * 40)
     info(f"Starting app v{APP_VERSION}...")
+
+    # 单例检测：通过 Windows Named Mutex 确保只运行一个实例
+    try:
+        _singleton_mutex = win32event.CreateMutex(None, False, "nightreign-overlay-helper-singleton")
+        if win32api.GetLastError() == winerror.ERROR_ALREADY_EXISTS:
+            info("检测到已有实例运行，尝试激活已有实例窗口...")
+            hwnd = win32gui.FindWindow(None, f"{APP_FULLNAME} - 设置")
+            if hwnd:
+                win32gui.ShowWindow(hwnd, 9)  # SW_RESTORE
+                win32gui.SetForegroundWindow(hwnd)
+                info("已激活已有实例的设置窗口。")
+            else:
+                info("已有实例正在运行（设置窗口未打开），本实例将退出。")
+            sys.exit(0)
+    except Exception as e:
+        warning(f"单例检测失败，将继续启动: {e}")
 
     QApplication.setAttribute(Qt.ApplicationAttribute.AA_Use96Dpi)
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
