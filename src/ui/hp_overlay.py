@@ -10,7 +10,7 @@ from PyQt6.QtGui import QColor
 from src.common import APP_FULLNAME, APP_AUTHOR
 from src.config import Config
 from src.logger import info, warning, error
-from src.ui.utils import set_widget_always_on_top, mss_region_to_qt_region
+from src.ui.utils import set_widget_always_on_top, ensure_visible_on_top, mss_region_to_qt_region
 
 
 @dataclass
@@ -108,5 +108,7 @@ class HpOverlayWidget(QWidget):
             self.show()
         elif not visible and self.isVisible():
             self.hide()
+        if visible and self.isVisible():
+            ensure_visible_on_top(self)
 
         

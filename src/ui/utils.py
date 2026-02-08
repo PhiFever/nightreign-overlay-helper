@@ -8,12 +8,29 @@ def set_widget_always_on_top(widget: QWidget):
         import win32gui
         import win32con
         hwnd = widget.winId().__int__()
-        win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 
-                                0, 0, 0, 0, 
+        win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST,
+                                0, 0, 0, 0,
                                 win32con.SWP_NOSIZE | win32con.SWP_NOMOVE)
         info(f"Window HWND: {hwnd} set to TOPMOST.")
     except Exception as e:
         warning(f"Error setting system always on top: {e}")
+
+
+def ensure_visible_on_top(widget: QWidget):
+    """确保窗口在 OS 层面可见并置顶。
+    每次 timerEvent 中调用，当窗口已可见时为近似空操作。
+    当 Win+D 隐藏 Tool 窗口后，ShowWindow + SetWindowPos 会将其恢复。
+    """
+    try:
+        import win32gui
+        import win32con
+        hwnd = widget.winId().__int__()
+        win32gui.ShowWindow(hwnd, win32con.SW_SHOWNOACTIVATE)
+        win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST,
+                                0, 0, 0, 0,
+                                win32con.SWP_NOSIZE | win32con.SWP_NOMOVE | win32con.SWP_NOACTIVATE)
+    except Exception:
+        pass
 
 
 def is_window_in_foreground(window_title: str) -> bool:

@@ -16,7 +16,7 @@ import glob
 from src.common import get_readable_timedelta, get_data_path, load_yaml
 from src.config import Config
 from src.logger import info, warning, error
-from src.ui.utils import set_widget_always_on_top, is_window_in_foreground, mss_region_to_qt_region
+from src.ui.utils import set_widget_always_on_top, ensure_visible_on_top, is_window_in_foreground, mss_region_to_qt_region
 from src.detector.utils import draw_text
 
 
@@ -336,6 +336,8 @@ class MapOverlayWidget(QWidget):
             self.show()
         elif not visible and self.isVisible():
             self.hide()
+        if visible and self.isVisible():
+            ensure_visible_on_top(self)
 
 
 

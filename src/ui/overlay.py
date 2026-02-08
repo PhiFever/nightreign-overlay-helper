@@ -10,7 +10,7 @@ from PyQt6.QtGui import QColor
 from src.common import APP_FULLNAME, APP_AUTHOR
 from src.config import Config
 from src.logger import info, warning, error
-from src.ui.utils import set_widget_always_on_top
+from src.ui.utils import set_widget_always_on_top, ensure_visible_on_top
 
 
 INITIAL_TEXT = f"{APP_FULLNAME} (右键打开菜单)"
@@ -57,7 +57,7 @@ class OverlayWidget(QWidget):
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool 
+            Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         set_widget_always_on_top(self)
@@ -274,7 +274,9 @@ class OverlayWidget(QWidget):
             self.show()
         elif not visible and self.isVisible():
             self.hide()
-        
+        if visible and self.isVisible():
+            ensure_visible_on_top(self)
+
         if self.hide_text:
             self.day_label.hide()
         else:
